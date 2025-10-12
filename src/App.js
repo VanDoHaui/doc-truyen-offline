@@ -75,9 +75,9 @@ export default function OfflineReaderApp() {
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [showHeader, setShowHeader] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
   const contentRef = useRef(null);
-  const touchStartX = useRef(0);
-  const touchEndX = useRef(0);
 
   useEffect(() => {
     setMounted(true);
@@ -118,36 +118,31 @@ export default function OfflineReaderApp() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    setShowHeader(true);
+    setLastScrollY(0);
   }, [currentChapter]);
 
-  // Xử lý vuốt trái/phải trên mobile
-  const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchMove = (e) => {
-    touchEndX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = () => {
-    if (!touchStartX.current || !touchEndX.current) return;
-    
-    const distance = touchStartX.current - touchEndX.current;
-    const threshold = 50; // Khoảng cách tối thiểu để kích hoạt
-
-    if (Math.abs(distance) > threshold) {
-      if (distance > 0 && currentChapter < chapters.length - 1) {
-        // Vuốt trái - Chương sau
-        changeChapter(currentChapter + 1);
-      } else if (distance < 0 && currentChapter > 0) {
-        // Vuốt phải - Chương trước
-        changeChapter(currentChapter - 1);
+  // Tự động ẩn/hiện header khi scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      
+      if (currentScrollY < 50) {
+        setShowHeader(true);
+      } else if (currentScrollY > lastScrollY) {
+        // Scroll xuống - ẩn header
+        setShowHeader(false);
+      } else {
+        // Scroll lên - hiện header
+        setShowHeader(true);
       }
-    }
+      
+      setLastScrollY(currentScrollY);
+    };
 
-    touchStartX.current = 0;
-    touchEndX.current = 0;
-  };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -196,36 +191,21 @@ export default function OfflineReaderApp() {
         const result = await mammoth.convertToHtml({ arrayBuffer });
         let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
         
-        // Nhóm các đoạn <p> chứa <strong> liên tiếp vào khung
-        const lines = html.split('\n');
-        let inBoldBlock = false;
-        let boldBlockContent = [];
-        const processedLines = [];
+        // Chuyển các bảng thành khung thông tin đẹp
+        html = html.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, content) => {
+          // Loại bỏ các thẻ table, tbody, tr, td và giữ lại nội dung
+          let cleanContent = content
+            .replace(/<\/?tbody[^>]*>/g, '')
+            .replace(/<tr[^>]*>/g, '')
+            .replace(/<\/tr>/g, '')
+            .replace(/<td[^>]*>/g, '<p>')
+            .replace(/<\/td>/g, '</p>');
+          return `<div class="info-box">${cleanContent}</div>`;
+        });
         
-        for (let line of lines) {
-          const hasBold = /<strong>/.test(line) && line.trim().startsWith('<p>');
-          
-          if (hasBold) {
-            if (!inBoldBlock) {
-              inBoldBlock = true;
-              boldBlockContent = [];
-            }
-            boldBlockContent.push(line);
-          } else {
-            if (inBoldBlock && boldBlockContent.length > 0) {
-              processedLines.push('<div class="info-box">' + boldBlockContent.join('\n') + '</div>');
-              boldBlockContent = [];
-              inBoldBlock = false;
-            }
-            processedLines.push(line);
-          }
-        }
-        
-        if (inBoldBlock && boldBlockContent.length > 0) {
-          processedLines.push('<div class="info-box">' + boldBlockContent.join('\n') + '</div>');
-        }
-        
-        html = processedLines.join('\n');
+        // Nhận diện và format thông tin nhân vật dạng "Tên : Grid"
+        html = html.replace(/^(Tên|Cấp độ|Lớp nghề|Danh hiệu|Khéo tay)\s*:\s*(.+)$/gm, 
+          '<div class="char-stat"><span class="char-label">$1</span><span class="char-sep">:</span><span class="char-value">$2</span></div>');
         
         html = html.replace(/\[([^\]]+)\]/g, '<span class="item-name">[$1]</span>');
         html = html.replace(/Xếp hạng\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Xếp hạng:</span><span class="stat-value">$1</span></div>');
@@ -562,9 +542,6 @@ export default function OfflineReaderApp() {
         onDrop={handleDrop}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         className="max-w-4xl mx-auto px-4 pt-20 pb-8 min-h-screen"
       >
         {dragOver && (
@@ -595,6 +572,42 @@ export default function OfflineReaderApp() {
           }
           .info-box strong {
             color: ${darkMode ? '#60a5fa' : '#1e40af'};
+          }
+          .char-stat {
+            display: grid;
+            grid-template-columns: 120px 20px 1fr;
+            padding: 10px 16px;
+            border: 1px solid ${darkMode ? '#3b82f6' : '#2563eb'};
+            background: ${darkMode ? '#1e293b' : '#f1f5f9'};
+            margin: 0;
+            align-items: center;
+            font-size: 1em;
+          }
+          .char-stat:first-of-type {
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+          }
+          .char-stat:last-of-type {
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+          }
+          .char-stat + .char-stat {
+            border-top: none;
+          }
+          .char-label {
+            font-weight: 700;
+            color: ${darkMode ? '#60a5fa' : '#1e40af'};
+            text-align: left;
+          }
+          .char-sep {
+            color: ${darkMode ? '#64748b' : '#94a3b8'};
+            text-align: center;
+            font-weight: 600;
+          }
+          .char-value {
+            color: ${darkMode ? '#e2e8f0' : '#1e293b'};
+            font-weight: 500;
+            text-align: left;
           }
           .item-name {
             display: inline-block;
