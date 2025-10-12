@@ -2,6 +2,63 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Moon, Sun, ChevronLeft, ChevronRight, Upload, Search, Trash2, BookOpen } from 'lucide-react';
 import mammoth from 'mammoth';
 
+// IndexedDB Helper
+const DB_NAME = 'DocTruyenDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'chapters';
+
+const openDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+  });
+};
+
+const saveToIndexedDB = async (key, value) => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put({ id: key, data: value });
+    
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const getFromIndexedDB = async (key) => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(key);
+    
+    request.onsuccess = () => resolve(request.result?.data);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const clearIndexedDB = async () => {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.clear();
+    
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
 export default function OfflineReaderApp() {
   const [darkMode, setDarkMode] = useState(false);
   const [chapters, setChapters] = useState([
@@ -23,19 +80,20 @@ export default function OfflineReaderApp() {
   const [showHeader, setShowHeader] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const contentRef = useRef(null);
 
   useEffect(() => {
     setMounted(true);
+    loadFromIndexedDB();
   }, []);
 
-  useEffect(() => {
-    if (!mounted || typeof window === 'undefined') return;
-    
+  const loadFromIndexedDB = async () => {
     try {
-      const savedData = localStorage.getItem('readerAppData_v2');
-      if (savedData) {
-        const data = JSON.parse(savedData);
+      setLoading(true);
+      const data = await getFromIndexedDB('appData');
+      if (data) {
         setDarkMode(data.darkMode || false);
         if (data.chapters && data.chapters.length > 0) {
           setChapters(data.chapters);
@@ -44,24 +102,24 @@ export default function OfflineReaderApp() {
         setFontSize(data.fontSize || 18);
       }
     } catch (error) {
-      console.error('Lỗi khi load dữ liệu:', error);
-      showToast('⚠️ Không thể tải dữ liệu đã lưu');
+      console.error('Lỗi khi load:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [mounted]);
+  };
+
+  const saveToStorage = async () => {
+    try {
+      const dataToSave = { darkMode, chapters, currentChapter, fontSize };
+      await saveToIndexedDB('appData', dataToSave);
+    } catch (error) {
+      console.error('Lỗi khi lưu:', error);
+    }
+  };
 
   useEffect(() => {
-    if (!mounted || typeof window === 'undefined') return;
-    
-    try {
-      const dataToSave = {
-        darkMode,
-        chapters,
-        currentChapter,
-        fontSize
-      };
-      localStorage.setItem('readerAppData_v2', JSON.stringify(dataToSave));
-    } catch (error) {
-      console.error('Lỗi khi lưu dữ liệu:', error);
+    if (mounted && chapters.length > 0) {
+      saveToStorage();
     }
   }, [darkMode, chapters, currentChapter, fontSize, mounted]);
 
@@ -153,26 +211,27 @@ export default function OfflineReaderApp() {
       return;
     }
 
+    setLoading(true);
     let successCount = 0;
-    for (const file of files) {
+    
+    for (let i = 0; i < files.length; i++) {
       try {
+        setProgress(Math.round(((i + 1) / files.length) * 100));
+        const file = files[i];
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.convertToHtml({ arrayBuffer });
         
         let html = result.value;
-        
+        html = html.replace(/<img[^>]*>/g, '');
         html = html.replace(/<p[^>]*>\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p>\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p>\s*…\s*<\/p>/gi, '');
-        html = html.replace(/<p[^>]*>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
-        html = html.replace(/<p[^>]*>\s*…\s*<\/p>/gi, '');
         
         const lines = html.split('</p>');
         const filtered = lines.filter(line => {
           const hasNav = line.includes('Trước') && line.includes('Bình') && line.includes('luận') && line.includes('Kế');
-          const isOnlyScope = line.match(/<p[^>]*>\s*phạm vi hiệu lực\s*<\/p>/i);
-          return !hasNav && !isOnlyScope;
+          return !hasNav;
         });
         html = filtered.join('</p>');
         
@@ -190,6 +249,8 @@ export default function OfflineReaderApp() {
       }
     }
     
+    setLoading(false);
+    setProgress(0);
     if (successCount > 0) {
       showToast(`✅ Đã thêm ${successCount} chương (Tổng: ${chapters.length + successCount})`);
     }
@@ -238,64 +299,53 @@ export default function OfflineReaderApp() {
     showToast(`✅ Đã chuyển đến chương ${pageNum}`);
   };
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
     if (window.confirm('Bạn có chắc muốn xóa TẤT CẢ dữ liệu? Hành động này không thể hoàn tác!')) {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('readerAppData_v2');
+      try {
+        await clearIndexedDB();
+        setChapters([{
+          id: 1,
+          title: 'Chương mẫu',
+          content: '<p>Đã xóa toàn bộ dữ liệu. Hãy thêm chương mới!</p>'
+        }]);
+        setCurrentChapter(0);
+        setFontSize(18);
+        showToast('🗑️ Đã xóa toàn bộ dữ liệu');
+      } catch (error) {
+        showToast('❌ Lỗi khi xóa dữ liệu');
       }
-      setChapters([{
-        id: 1,
-        title: 'Chương mẫu',
-        content: '<p>Đã xóa toàn bộ dữ liệu. Hãy thêm chương mới!</p>'
-      }]);
-      setCurrentChapter(0);
-      setFontSize(18);
-      showToast('🗑️ Đã xóa toàn bộ dữ liệu');
     }
   };
 
-  const forceSave = () => {
+  const forceSave = async () => {
     try {
-      const dataToSave = {
-        darkMode,
-        chapters,
-        currentChapter,
-        fontSize
-      };
-      localStorage.setItem('readerAppData_v2', JSON.stringify(dataToSave));
-      showToast(`✅ Đã lưu ${chapters.length} chương vào bộ nhớ!`);
-      
-      const verified = localStorage.getItem('readerAppData_v2');
-      if (verified) {
-        const parsed = JSON.parse(verified);
-        console.log('✅ Xác nhận đã lưu:', parsed.chapters.length, 'chương');
-      }
+      setLoading(true);
+      await saveToStorage();
+      showToast(`✅ Đã lưu ${chapters.length} chương vào IndexedDB!`);
     } catch (error) {
       console.error('❌ Lỗi khi lưu:', error);
-      if (error.name === 'QuotaExceededError') {
-        showToast('❌ Bộ nhớ đầy! Xóa bớt chương');
-      } else {
-        showToast('❌ Lỗi khi lưu: ' + error.message);
-      }
+      showToast('❌ Lỗi khi lưu: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const checkStorage = () => {
+  const checkStorage = async () => {
     try {
-      const data = localStorage.getItem('readerAppData_v2');
-      if (data) {
-        const parsed = JSON.parse(data);
-        showToast(`📦 Đã có ${parsed.chapters.length} chương trong bộ nhớ`);
+      const data = await getFromIndexedDB('appData');
+      if (data && data.chapters) {
+        showToast(`📦 Đã có ${data.chapters.length} chương trong IndexedDB`);
       } else {
-        showToast('⚠️ Chưa có dữ liệu trong bộ nhớ');
+        showToast('⚠️ Chưa có dữ liệu');
       }
     } catch (error) {
-      showToast('❌ Lỗi khi đọc bộ nhớ');
+      showToast('❌ Lỗi khi kiểm tra');
     }
   };
 
   const exportData = () => {
     try {
+      setLoading(true);
       const dataToExport = {
         darkMode,
         chapters,
@@ -317,16 +367,19 @@ export default function OfflineReaderApp() {
     } catch (error) {
       console.error('Lỗi khi xuất dữ liệu:', error);
       showToast('❌ Lỗi khi xuất dữ liệu');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const importData = (event) => {
+  const importData = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        setLoading(true);
         const importedData = JSON.parse(e.target.result);
         
         if (!importedData.chapters || !Array.isArray(importedData.chapters)) {
@@ -339,28 +392,19 @@ export default function OfflineReaderApp() {
         setCurrentChapter(importedData.currentChapter || 0);
         setFontSize(importedData.fontSize || 18);
         
-        try {
-          const dataToSave = {
-            darkMode: importedData.darkMode || false,
-            chapters: importedData.chapters,
-            currentChapter: importedData.currentChapter || 0,
-            fontSize: importedData.fontSize || 18
-          };
-          localStorage.setItem('readerAppData_v2', JSON.stringify(dataToSave));
-          
-          const verified = localStorage.getItem('readerAppData_v2');
-          if (verified) {
-            showToast(`✅ Đã nhập và lưu ${importedData.chapters.length} chương!`);
-          } else {
-            showToast(`⚠️ Đã nhập ${importedData.chapters.length} chương. Nhấn "💾 Lưu ngay"!`);
-          }
-        } catch (saveError) {
-          console.error('Lỗi khi lưu:', saveError);
-          showToast(`⚠️ Đã nhập ${importedData.chapters.length} chương. PHẢI nhấn "💾 Lưu ngay"!`);
-        }
+        await saveToIndexedDB('appData', {
+          darkMode: importedData.darkMode || false,
+          chapters: importedData.chapters,
+          currentChapter: importedData.currentChapter || 0,
+          fontSize: importedData.fontSize || 18
+        });
+        
+        showToast(`✅ Đã nhập ${importedData.chapters.length} chương vào IndexedDB!`);
       } catch (error) {
         console.error('Lỗi khi nhập dữ liệu:', error);
         showToast('❌ File JSON không hợp lệ');
+      } finally {
+        setLoading(false);
       }
     };
     reader.readAsText(file);
@@ -382,26 +426,27 @@ export default function OfflineReaderApp() {
       return;
     }
 
+    setLoading(true);
     let successCount = 0;
-    for (const file of files) {
+    
+    for (let i = 0; i < files.length; i++) {
       try {
+        setProgress(Math.round(((i + 1) / files.length) * 100));
+        const file = files[i];
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.convertToHtml({ arrayBuffer });
         
         let html = result.value;
-        
+        html = html.replace(/<img[^>]*>/g, '');
         html = html.replace(/<p[^>]*>\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p>\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p>\s*…\s*<\/p>/gi, '');
-        html = html.replace(/<p[^>]*>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
-        html = html.replace(/<p[^>]*>\s*…\s*<\/p>/gi, '');
         
         const lines = html.split('</p>');
         const filtered = lines.filter(line => {
           const hasNav = line.includes('Trước') && line.includes('Bình') && line.includes('luận') && line.includes('Kế');
-          const hasScope = line.includes('phạm vi hiệu lực') && (line.includes('↑') || line.includes('↲'));
-          return !hasNav && !hasScope;
+          return !hasNav;
         });
         html = filtered.join('</p>');
         
@@ -419,6 +464,8 @@ export default function OfflineReaderApp() {
       }
     }
     
+    setLoading(false);
+    setProgress(0);
     if (successCount > 0) {
       showToast(`✅ Đã thêm ${successCount} chương (Tổng: ${chapters.length + successCount})`);
     }
@@ -464,29 +511,25 @@ export default function OfflineReaderApp() {
           border-top: 2px solid ${darkMode ? '#374151' : '#e5e7eb'};
           margin: 2em 0;
         }
-        .prose table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 1.5em 0;
-          background: ${darkMode ? '#1f2937' : '#ffffff'};
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .prose th, .prose td {
-          padding: 12px 16px;
-          text-align: left;
-          border: 1px solid ${darkMode ? '#374151' : '#e5e7eb'};
-        }
-        .prose th {
-          background: ${darkMode ? '#374151' : '#f3f4f6'};
-          font-weight: 600;
-          color: ${darkMode ? '#f9fafb' : '#1f2937'};
-        }
-        .prose tr:hover {
-          background: ${darkMode ? '#374151' : '#f9fafb'};
-        }
       `}</style>
+
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg p-6 max-w-sm w-full mx-4`}>
+            <div className="text-center">
+              <div className="text-2xl mb-2">⏳</div>
+              <p className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                {progress > 0 ? `Đang xử lý... ${progress}%` : 'Đang tải...'}
+              </p>
+              {progress > 0 && (
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{width: `${progress}%`}}></div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b fixed top-0 left-0 right-0 z-20 shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -748,7 +791,7 @@ export default function OfflineReaderApp() {
       )}
 
       {toast.show && (
-        <div className="fixed bottom-20 left-4 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in max-w-sm">
+        <div className="fixed bottom-20 left-4 right-4 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in">
           {toast.message}
         </div>
       )}
