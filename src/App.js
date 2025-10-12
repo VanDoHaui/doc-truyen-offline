@@ -330,33 +330,47 @@ export default function OfflineReaderApp() {
   };
 
   const importData = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+  const file = event.target.files[0];
+  if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const importedData = JSON.parse(e.target.result);
-        
-        if (!importedData.chapters || !Array.isArray(importedData.chapters)) {
-          showToast('❌ File không hợp lệ');
-          return;
-        }
-
-        setDarkMode(importedData.darkMode || false);
-        setChapters(importedData.chapters);
-        setCurrentChapter(importedData.currentChapter || 0);
-        setFontSize(importedData.fontSize || 18);
-        
-        showToast(`✅ Đã nhập ${importedData.chapters.length} chương thành công!`);
-      } catch (error) {
-        console.error('Lỗi khi nhập dữ liệu:', error);
-        showToast('❌ File JSON không hợp lệ');
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const importedData = JSON.parse(e.target.result);
+      
+      if (!importedData.chapters || !Array.isArray(importedData.chapters)) {
+        showToast('❌ File không hợp lệ');
+        return;
       }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
+
+      // Set state
+      setDarkMode(importedData.darkMode || false);
+      setChapters(importedData.chapters);
+      setCurrentChapter(importedData.currentChapter || 0);
+      setFontSize(importedData.fontSize || 18);
+      
+      // LƯU NGAY VÀO LOCALSTORAGE (THÊM ĐOẠN NÀY)
+      try {
+        const dataToSave = {
+          darkMode: importedData.darkMode || false,
+          chapters: importedData.chapters,
+          currentChapter: importedData.currentChapter || 0,
+          fontSize: importedData.fontSize || 18
+        };
+        localStorage.setItem('readerAppData_v2', JSON.stringify(dataToSave));
+        showToast(`✅ Đã nhập và lưu ${importedData.chapters.length} chương!`);
+      } catch (saveError) {
+        console.error('Lỗi khi lưu vào localStorage:', saveError);
+        showToast('⚠️ Đã nhập nhưng có thể chưa lưu được');
+      }
+    } catch (error) {
+      console.error('Lỗi khi nhập dữ liệu:', error);
+      showToast('❌ File JSON không hợp lệ');
+    }
   };
+  reader.readAsText(file);
+  event.target.value = '';
+};
 
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files).filter(f => 
