@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Moon, Sun, ChevronLeft, ChevronRight, Upload, Menu, X, BookOpen, Download, FileUp, Save, Database, Trash2 } from 'lucide-react';
+import { Moon, Sun, Upload, Menu, X, BookOpen, Download, FileUp, Save, Database, Trash2 } from 'lucide-react';
 import mammoth from 'mammoth';
 
 // IndexedDB Helper
@@ -56,12 +56,11 @@ const clearIndexedDB = async () => {
 
 export default function OfflineReaderApp() {
   const [darkMode, setDarkMode] = useState(true);
-  const [verticalMode, setVerticalMode] = useState(true);
   const [chapters, setChapters] = useState([
     {
       id: 1,
       title: 'Chương mẫu',
-      content: '<p>Chào mừng đến với ứng dụng đọc truyện! 📚</p><p>Nhấn nút Menu để xem các tùy chọn.</p>'
+      content: '<p>Chào mừng đến với ứng dụng đọc truyện! 📚</p><p>Dùng mũi tên trái/phải để chuyển chương.</p>'
     }
   ]);
   const [currentChapter, setCurrentChapter] = useState(0);
@@ -72,10 +71,13 @@ export default function OfflineReaderApp() {
   const [jumpPage, setJumpPage] = useState('');
   const [showJumpModal, setShowJumpModal] = useState(false);
   const [fontSize, setFontSize] = useState(18);
+  const [lineHeight, setLineHeight] = useState(1.8);
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const contentRef = useRef(null);
+  const touchStartX = useRef(0);
+  const touchEndX = useRef(0);
 
   useEffect(() => {
     setMounted(true);
@@ -87,12 +89,12 @@ export default function OfflineReaderApp() {
       const data = await getFromIndexedDB('appData');
       if (data) {
         setDarkMode(data.darkMode !== undefined ? data.darkMode : true);
-        setVerticalMode(data.verticalMode !== undefined ? data.verticalMode : true);
         if (data.chapters && data.chapters.length > 0) {
           setChapters(data.chapters);
         }
         setCurrentChapter(data.currentChapter || 0);
         setFontSize(data.fontSize || 18);
+        setLineHeight(data.lineHeight || 1.8);
       }
     } catch (error) {
       console.error('Lỗi load:', error);
@@ -101,7 +103,7 @@ export default function OfflineReaderApp() {
 
   const saveToStorage = async () => {
     try {
-      await saveToIndexedDB('appData', { darkMode, verticalMode, chapters, currentChapter, fontSize });
+      await saveToIndexedDB('appData', { darkMode, chapters, currentChapter, fontSize, lineHeight });
     } catch (error) {
       console.error('Lỗi lưu:', error);
     }
@@ -112,23 +114,57 @@ export default function OfflineReaderApp() {
       const timer = setTimeout(() => saveToStorage(), 500);
       return () => clearTimeout(timer);
     }
-  }, [darkMode, verticalMode, chapters, currentChapter, fontSize, mounted]);
+  }, [darkMode, chapters, currentChapter, fontSize, lineHeight, mounted]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [currentChapter]);
 
+  // Xử lý vuốt trái/phải trên mobile
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchMove = (e) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return;
+    
+    const distance = touchStartX.current - touchEndX.current;
+    const threshold = 50; // Khoảng cách tối thiểu để kích hoạt
+
+    if (Math.abs(distance) > threshold) {
+      if (distance > 0 && currentChapter < chapters.length - 1) {
+        // Vuốt trái - Chương sau
+        changeChapter(currentChapter + 1);
+      } else if (distance < 0 && currentChapter > 0) {
+        // Vuốt phải - Chương trước
+        changeChapter(currentChapter - 1);
+      }
+    }
+
+    touchStartX.current = 0;
+    touchEndX.current = 0;
+  };
+
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (showMenu || showJumpModal) return;
+      
       if (e.key === 'ArrowLeft' && currentChapter > 0) {
+        e.preventDefault();
         changeChapter(currentChapter - 1);
       } else if (e.key === 'ArrowRight' && currentChapter < chapters.length - 1) {
+        e.preventDefault();
         changeChapter(currentChapter + 1);
       }
     };
+    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentChapter, chapters.length]);
+  }, [currentChapter, chapters.length, showMenu, showJumpModal]);
 
   const showToast = (message) => {
     setToast({ show: true, message });
@@ -136,7 +172,14 @@ export default function OfflineReaderApp() {
   };
 
   const changeChapter = (newIndex) => {
-    if (newIndex < 0 || newIndex >= chapters.length) return;
+    if (newIndex < 0) {
+      showToast('⚠️ Đây là chương đầu');
+      return;
+    }
+    if (newIndex >= chapters.length) {
+      showToast('⚠️ Hết chương rồi');
+      return;
+    }
     setCurrentChapter(newIndex);
     window.scrollTo(0, 0);
   };
@@ -152,6 +195,44 @@ export default function OfflineReaderApp() {
         const arrayBuffer = await files[i].arrayBuffer();
         const result = await mammoth.convertToHtml({ arrayBuffer });
         let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
+        
+        // Nhóm các đoạn <p> chứa <strong> liên tiếp vào khung
+        const lines = html.split('\n');
+        let inBoldBlock = false;
+        let boldBlockContent = [];
+        const processedLines = [];
+        
+        for (let line of lines) {
+          const hasBold = /<strong>/.test(line) && line.trim().startsWith('<p>');
+          
+          if (hasBold) {
+            if (!inBoldBlock) {
+              inBoldBlock = true;
+              boldBlockContent = [];
+            }
+            boldBlockContent.push(line);
+          } else {
+            if (inBoldBlock && boldBlockContent.length > 0) {
+              processedLines.push('<div class="info-box">' + boldBlockContent.join('\n') + '</div>');
+              boldBlockContent = [];
+              inBoldBlock = false;
+            }
+            processedLines.push(line);
+          }
+        }
+        
+        if (inBoldBlock && boldBlockContent.length > 0) {
+          processedLines.push('<div class="info-box">' + boldBlockContent.join('\n') + '</div>');
+        }
+        
+        html = processedLines.join('\n');
+        
+        html = html.replace(/\[([^\]]+)\]/g, '<span class="item-name">[$1]</span>');
+        html = html.replace(/Xếp hạng\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Xếp hạng:</span><span class="stat-value">$1</span></div>');
+        html = html.replace(/Độ bền\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Độ bền:</span><span class="stat-value">$1</span></div>');
+        html = html.replace(/Sức Tấn công\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Tấn công:</span><span class="stat-value">$1</span></div>');
+        html = html.replace(/Tốc độ tấn công\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Tốc độ:</span><span class="stat-value">$1</span></div>');
+        
         newChapters.push({
           id: Date.now() + Math.random(),
           title: files[i].name.replace(/\.(docx|doc)$/, ''),
@@ -200,7 +281,7 @@ export default function OfflineReaderApp() {
 
   const exportData = () => {
     try {
-      const blob = new Blob([JSON.stringify({ darkMode, chapters, currentChapter, fontSize }, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify({ darkMode, chapters, currentChapter, fontSize, lineHeight }, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -226,7 +307,8 @@ export default function OfflineReaderApp() {
         setChapters(data.chapters);
         setCurrentChapter(data.currentChapter || 0);
         setFontSize(data.fontSize || 18);
-        await saveToIndexedDB('appData', { darkMode: data.darkMode, chapters: data.chapters, currentChapter: data.currentChapter || 0, fontSize: data.fontSize || 18, verticalMode: data.verticalMode !== undefined ? data.verticalMode : true });
+        setLineHeight(data.lineHeight || 1.8);
+        await saveToIndexedDB('appData', data);
         showToast(`✅ Nhập ${data.chapters.length} chương!`);
       } catch (error) {
         showToast('❌ File lỗi');
@@ -247,15 +329,14 @@ export default function OfflineReaderApp() {
             <p className="font-bold mb-3">{progress > 0 ? `${progress}%` : 'Đang tải...'}</p>
             {progress > 0 && (
               <div className="w-full bg-gray-700 rounded-full h-2">
-                <div className="bg-blue-500 h-2 rounded-full" style={{width: `${progress}%`}}></div>
+                <div className="bg-blue-500 h-2 rounded-full transition-all" style={{width: `${progress}%`}}></div>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} sticky top-0 z-20 shadow-sm`}>
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 right-0 z-20 shadow-sm`}>
         <div className="max-w-5xl mx-auto px-3 py-3 flex items-center justify-between">
           <button
             onClick={() => setShowMenu(!showMenu)}
@@ -264,10 +345,14 @@ export default function OfflineReaderApp() {
             {showMenu ? <X size={20} /> : <Menu size={20} />}
           </button>
           
-          <h1 className="text-lg font-bold flex items-center gap-2">
-            📚 {chapters[currentChapter]?.title.substring(0, 20)}
-            {chapters[currentChapter]?.title.length > 20 && '...'}
-          </h1>
+          <div className="flex-1 text-center">
+            <h1 className="text-base font-bold truncate px-2">
+              {chapters[currentChapter]?.title}
+            </h1>
+            <p className="text-xs opacity-60">
+              {currentChapter + 1} / {chapters.length}
+            </p>
+          </div>
           
           <button
             onClick={() => setDarkMode(!darkMode)}
@@ -278,13 +363,28 @@ export default function OfflineReaderApp() {
         </div>
       </div>
 
-      {/* Menu Sidebar */}
       {showMenu && (
         <>
           <div className="fixed inset-0 bg-black/50 z-30" onClick={() => setShowMenu(false)}></div>
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 bottom-0 w-80 z-40 overflow-y-auto`}>
             <div className="p-4 space-y-4">
-              {/* Search */}
+              {/* Đọc tiếp */}
+              <div 
+                onClick={() => {
+                  setShowMenu(false);
+                }}
+                className={`p-4 rounded-lg ${darkMode ? 'bg-gradient-to-r from-blue-600 to-purple-600' : 'bg-gradient-to-r from-blue-500 to-purple-500'} cursor-pointer hover:opacity-90 transition-all`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <BookOpen size={18} className="text-white" />
+                  <span className="text-white font-bold text-sm">Đọc tiếp</span>
+                </div>
+                <div className="text-white font-medium truncate">{chapters[currentChapter]?.title}</div>
+                <div className="text-white/80 text-xs mt-1">
+                  Chương {currentChapter + 1} / {chapters.length}
+                </div>
+              </div>
+
               <div>
                 <input
                   type="text"
@@ -298,7 +398,6 @@ export default function OfflineReaderApp() {
                 </div>
               </div>
 
-              {/* Chapter List */}
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 {filteredChapters.map((ch) => (
                   <div
@@ -328,7 +427,6 @@ export default function OfflineReaderApp() {
                 ))}
               </div>
 
-              {/* Font Size */}
               <div>
                 <label className="text-sm font-medium block mb-2">Cỡ chữ: {fontSize}px</label>
                 <div className="flex gap-2">
@@ -353,26 +451,30 @@ export default function OfflineReaderApp() {
                 </div>
               </div>
 
-              {/* Reading Mode */}
               <div>
-                <label className="text-sm font-medium block mb-2">Chế độ đọc</label>
+                <label className="text-sm font-medium block mb-2">Giãn dòng: {lineHeight.toFixed(1)}</label>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setVerticalMode(false)}
-                    className={`flex-1 py-2 rounded-lg ${!verticalMode ? 'bg-blue-600 text-white' : darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
+                    onClick={() => setLineHeight(Math.max(1.2, lineHeight - 0.2))}
+                    className={`flex-1 py-2 rounded-lg ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
                   >
-                    ➡️ Ngang
+                    Giảm
                   </button>
                   <button
-                    onClick={() => setVerticalMode(true)}
-                    className={`flex-1 py-2 rounded-lg ${verticalMode ? 'bg-blue-600 text-white' : darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
+                    onClick={() => setLineHeight(1.8)}
+                    className={`flex-1 py-2 rounded-lg ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
                   >
-                    ⬇️ Dọc
+                    Mặc định
+                  </button>
+                  <button
+                    onClick={() => setLineHeight(Math.min(2.5, lineHeight + 0.2))}
+                    className={`flex-1 py-2 rounded-lg ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}
+                  >
+                    Tăng
                   </button>
                 </div>
               </div>
 
-              {/* Jump to Chapter */}
               <button
                 onClick={() => {
                   setShowJumpModal(true);
@@ -384,7 +486,6 @@ export default function OfflineReaderApp() {
                 Nhảy tới chương
               </button>
 
-              {/* Upload */}
               <label className="block">
                 <input
                   type="file"
@@ -399,7 +500,6 @@ export default function OfflineReaderApp() {
                 </div>
               </label>
 
-              {/* Actions */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={exportData}
@@ -457,94 +557,106 @@ export default function OfflineReaderApp() {
         </>
       )}
 
-      {/* Content */}
-      {verticalMode ? (
-        // Chế độ dọc - tất cả chương liên tục
+      <div
+        ref={contentRef}
+        onDrop={handleDrop}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="max-w-4xl mx-auto px-4 pt-20 pb-8 min-h-screen"
+      >
+        {dragOver && (
+          <div className="fixed inset-4 border-4 border-dashed border-blue-500 rounded-xl bg-blue-500/10 flex items-center justify-center z-30">
+            <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} px-6 py-4 rounded-xl`}>
+              <Upload size={40} className="mx-auto mb-2 text-blue-500" />
+              <p className="font-bold">Thả file vào đây!</p>
+            </div>
+          </div>
+        )}
+
+        <style>{`
+          .info-box {
+            border: 2px solid ${darkMode ? '#3b82f6' : '#2563eb'};
+            background: ${darkMode ? '#1e3a5f' : '#eff6ff'};
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin: 16px 0;
+          }
+          .info-box p {
+            margin: 8px 0;
+          }
+          .info-box p:first-child {
+            margin-top: 0;
+          }
+          .info-box p:last-child {
+            margin-bottom: 0;
+          }
+          .info-box strong {
+            color: ${darkMode ? '#60a5fa' : '#1e40af'};
+          }
+          .item-name {
+            display: inline-block;
+            background: ${darkMode ? '#1e40af' : '#3b82f6'};
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.95em;
+            margin: 4px 0;
+          }
+          .stat-row {
+            display: flex;
+            padding: 6px 12px;
+            border-bottom: 1px solid ${darkMode ? '#374151' : '#e5e7eb'};
+            background: ${darkMode ? '#1f2937' : '#f9fafb'};
+            margin: 2px 0;
+          }
+          .stat-label {
+            font-weight: 600;
+            min-width: 100px;
+            color: ${darkMode ? '#9ca3af' : '#6b7280'};
+          }
+          .stat-value {
+            flex: 1;
+            color: ${darkMode ? '#e5e7eb' : '#374151'};
+          }
+        `}</style>
+
         <div
-          ref={contentRef}
-          onDrop={handleDrop}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
-          className="max-w-4xl mx-auto px-4 py-6 pb-24"
-        >
-          {dragOver && (
-            <div className="fixed inset-4 border-4 border-dashed border-blue-500 rounded-xl bg-blue-500/10 flex items-center justify-center z-30">
-              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} px-6 py-4 rounded-xl`}>
-                <Upload size={40} className="mx-auto mb-2 text-blue-500" />
-                <p className="font-bold">Thả file vào đây!</p>
-              </div>
-            </div>
-          )}
-
-          {chapters.map((chapter, index) => (
-            <div key={chapter.id} className="mb-12">
-              <h2 className={`text-2xl font-bold mb-4 pb-2 border-b-2 ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
-                {chapter.title}
-              </h2>
-              <div
-                className="prose prose-lg max-w-none"
-                style={{
-                  fontSize: `${fontSize}px`,
-                  lineHeight: '1.8',
-                  color: darkMode ? '#e5e7eb' : '#374151'
-                }}
-                dangerouslySetInnerHTML={{ __html: chapter.content }}
-              />
-              {index < chapters.length - 1 && (
-                <div className={`mt-8 pt-4 border-t-2 ${darkMode ? 'border-gray-700' : 'border-gray-300'} text-center text-sm opacity-60`}>
-                  • • •
-                </div>
-              )}
-            </div>
-          ))}
-
-          {chapters.length <= 3 && (
-            <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'} rounded-xl p-8 border-2 border-dashed text-center mt-8`}>
-              <Upload size={40} className="mx-auto mb-3 opacity-50" />
-              <p className="font-semibold mb-2">Kéo thả file .docx vào đây</p>
-              <p className="text-sm opacity-60">hoặc nhấn nút Menu → Thêm chương</p>
-            </div>
-          )}
+          className="prose prose-lg max-w-none"
+          style={{
+            fontSize: `${fontSize}px`,
+            lineHeight: `${lineHeight}`,
+            color: darkMode ? '#e5e7eb' : '#374151'
+          }}
+          dangerouslySetInnerHTML={{ __html: chapters[currentChapter]?.content }}
+        />
+        
+        <div className="flex justify-between items-center mt-12 pt-6 border-t" style={{ borderColor: darkMode ? '#374151' : '#e5e7eb' }}>
+          {currentChapter > 0 ? (
+            <button
+              onClick={() => changeChapter(currentChapter - 1)}
+              className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all`}
+            >
+              <span className="font-bold text-xl">&lt;</span>
+              <span className="text-base">Chương trước</span>
+            </button>
+          ) : <div></div>}
+          
+          {currentChapter < chapters.length - 1 ? (
+            <button
+              onClick={() => changeChapter(currentChapter + 1)}
+              className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all`}
+            >
+              <span className="text-base">Chương sau</span>
+              <span className="font-bold text-xl">&gt;</span>
+            </button>
+          ) : <div></div>}
         </div>
-      ) : (
-        // Chế độ ngang - từng chương riêng
-        <div
-          ref={contentRef}
-          onDrop={handleDrop}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
-          className="max-w-4xl mx-auto px-4 py-6 pb-24"
-        >
-          {dragOver && (
-            <div className="fixed inset-4 border-4 border-dashed border-blue-500 rounded-xl bg-blue-500/10 flex items-center justify-center z-30">
-              <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} px-6 py-4 rounded-xl`}>
-                <Upload size={40} className="mx-auto mb-2 text-blue-500" />
-                <p className="font-bold">Thả file vào đây!</p>
-              </div>
-            </div>
-          )}
+      </div>
 
-          <div
-            className="prose prose-lg max-w-none"
-            style={{
-              fontSize: `${fontSize}px`,
-              lineHeight: '1.8',
-              color: darkMode ? '#e5e7eb' : '#374151'
-            }}
-            dangerouslySetInnerHTML={{ __html: chapters[currentChapter]?.content }}
-          />
-
-          {chapters.length <= 3 && (
-            <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'} rounded-xl p-8 border-2 border-dashed text-center mt-8`}>
-              <Upload size={40} className="mx-auto mb-3 opacity-50" />
-              <p className="font-semibold mb-2">Kéo thả file .docx vào đây</p>
-              <p className="text-sm opacity-60">hoặc nhấn nút Menu → Thêm chương</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Jump Modal */}
       {showJumpModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setShowJumpModal(false)}>
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 max-w-sm w-full`} onClick={(e) => e.stopPropagation()}>
@@ -597,44 +709,10 @@ export default function OfflineReaderApp() {
         </div>
       )}
 
-      {/* Toast */}
       {toast.show && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50">
-          <div className="bg-gray-900 text-white px-4 py-2 rounded-lg shadow-xl">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} px-4 py-2 rounded-lg shadow-lg`}>
             {toast.message}
-          </div>
-        </div>
-      )}
-
-      {/* Bottom Nav */}
-      {!verticalMode && (
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed bottom-0 left-0 right-0 z-20 shadow-lg`}>
-          <div className="max-w-5xl mx-auto px-3 py-3 flex items-center justify-between">
-            <button
-              onClick={() => changeChapter(currentChapter - 1)}
-              disabled={currentChapter === 0}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium ${
-                currentChapter === 0 ? 'opacity-30' : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              <ChevronLeft size={18} />
-              Trước
-            </button>
-            
-            <div className="text-sm font-medium">
-              {currentChapter + 1} / {chapters.length}
-            </div>
-            
-            <button
-              onClick={() => changeChapter(currentChapter + 1)}
-              disabled={currentChapter >= chapters.length - 1}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium ${
-                currentChapter >= chapters.length - 1 ? 'opacity-30' : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              Sau
-              <ChevronRight size={18} />
-            </button>
           </div>
         </div>
       )}
