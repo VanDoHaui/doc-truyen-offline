@@ -22,12 +22,16 @@ export default function OfflineReaderApp() {
   const [fontSize, setFontSize] = useState(18);
   const [showHeader, setShowHeader] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importText, setImportText] = useState('');
+  const [mounted, setMounted] = useState(false);
   const contentRef = useRef(null);
 
-  // Load dữ liệu từ localStorage khi khởi động
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted || typeof window === 'undefined') return;
+    
     try {
       const savedData = localStorage.getItem('readerAppData_v2');
       if (savedData) {
@@ -43,10 +47,11 @@ export default function OfflineReaderApp() {
       console.error('Lỗi khi load dữ liệu:', error);
       showToast('⚠️ Không thể tải dữ liệu đã lưu');
     }
-  }, []);
+  }, [mounted]);
 
-  // Lưu dữ liệu vào localStorage mỗi khi có thay đổi
   useEffect(() => {
+    if (!mounted || typeof window === 'undefined') return;
+    
     try {
       const dataToSave = {
         darkMode,
@@ -58,9 +63,8 @@ export default function OfflineReaderApp() {
     } catch (error) {
       console.error('Lỗi khi lưu dữ liệu:', error);
     }
-  }, [darkMode, chapters, currentChapter, fontSize]);
+  }, [darkMode, chapters, currentChapter, fontSize, mounted]);
 
-  // Scroll về đầu trang khi chuyển chương
   useEffect(() => {
     if (contentRef.current) {
       contentRef.current.scrollTop = 0;
@@ -68,7 +72,6 @@ export default function OfflineReaderApp() {
     }
   }, [currentChapter]);
 
-  // Xử lý phím mũi tên
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowLeft') {
@@ -84,16 +87,13 @@ export default function OfflineReaderApp() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentChapter, chapters.length]);
 
-  // Ẩn/hiện header khi scroll
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       
       if (currentScrollY > lastScrollY && currentScrollY > 100) {
-        // Scroll xuống -> ẩn header
         setShowHeader(false);
       } else {
-        // Scroll lên -> hiện header
         setShowHeader(true);
       }
       
@@ -161,21 +161,16 @@ export default function OfflineReaderApp() {
         
         let html = result.value;
         
-        // Xóa các thẻ <p> chỉ chứa 1 dấu chấm
         html = html.replace(/<p[^>]*>\s*\.\s*<\/p>/gi, '');
-        
         html = html.replace(/<p>\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p>\s*…\s*<\/p>/gi, '');
         html = html.replace(/<p[^>]*>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p[^>]*>\s*…\s*<\/p>/gi, '');
         
-        // Xóa dòng điều hướng ở cuối - phải có cả 4 từ: Trước, Bình, luận, Kế
         const lines = html.split('</p>');
         const filtered = lines.filter(line => {
-          // Chỉ xóa dòng có CẢ 4 từ khóa điều hướng
           const hasNav = line.includes('Trước') && line.includes('Bình') && line.includes('luận') && line.includes('Kế');
-          // Hoặc xóa dòng CHÍNH XÁC chỉ có "phạm vi hiệu lực" (không có text khác)
           const isOnlyScope = line.match(/<p[^>]*>\s*phạm vi hiệu lực\s*<\/p>/i);
           return !hasNav && !isOnlyScope;
         });
@@ -245,7 +240,9 @@ export default function OfflineReaderApp() {
 
   const clearAllData = () => {
     if (window.confirm('Bạn có chắc muốn xóa TẤT CẢ dữ liệu? Hành động này không thể hoàn tác!')) {
-      localStorage.removeItem('readerAppData_v2');
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('readerAppData_v2');
+      }
       setChapters([{
         id: 1,
         title: 'Chương mẫu',
@@ -254,6 +251,46 @@ export default function OfflineReaderApp() {
       setCurrentChapter(0);
       setFontSize(18);
       showToast('🗑️ Đã xóa toàn bộ dữ liệu');
+    }
+  };
+
+  const forceSave = () => {
+    try {
+      const dataToSave = {
+        darkMode,
+        chapters,
+        currentChapter,
+        fontSize
+      };
+      localStorage.setItem('readerAppData_v2', JSON.stringify(dataToSave));
+      showToast(`✅ Đã lưu ${chapters.length} chương vào bộ nhớ!`);
+      
+      const verified = localStorage.getItem('readerAppData_v2');
+      if (verified) {
+        const parsed = JSON.parse(verified);
+        console.log('✅ Xác nhận đã lưu:', parsed.chapters.length, 'chương');
+      }
+    } catch (error) {
+      console.error('❌ Lỗi khi lưu:', error);
+      if (error.name === 'QuotaExceededError') {
+        showToast('❌ Bộ nhớ đầy! Xóa bớt chương');
+      } else {
+        showToast('❌ Lỗi khi lưu: ' + error.message);
+      }
+    }
+  };
+
+  const checkStorage = () => {
+    try {
+      const data = localStorage.getItem('readerAppData_v2');
+      if (data) {
+        const parsed = JSON.parse(data);
+        showToast(`📦 Đã có ${parsed.chapters.length} chương trong bộ nhớ`);
+      } else {
+        showToast('⚠️ Chưa có dữ liệu trong bộ nhớ');
+      }
+    } catch (error) {
+      showToast('❌ Lỗi khi đọc bộ nhớ');
     }
   };
 
@@ -283,94 +320,52 @@ export default function OfflineReaderApp() {
     }
   };
 
-  const copyDataToClipboard = async () => {
-    try {
-      const dataToExport = {
-        darkMode,
-        chapters,
-        currentChapter,
-        fontSize,
-        exportDate: new Date().toISOString()
-      };
-      const jsonString = JSON.stringify(dataToExport);
-      await navigator.clipboard.writeText(jsonString);
-      showToast('✅ Đã copy dữ liệu! Paste vào Notes để lưu');
-    } catch (error) {
-      console.error('Lỗi khi copy:', error);
-      showToast('❌ Lỗi khi copy dữ liệu');
-    }
-  };
-
-  const pasteDataFromText = () => {
-    try {
-      if (!importText.trim()) {
-        showToast('⚠️ Vui lòng paste dữ liệu JSON vào ô');
-        return;
-      }
-
-      const importedData = JSON.parse(importText);
-      
-      if (!importedData.chapters || !Array.isArray(importedData.chapters)) {
-        showToast('❌ Dữ liệu không hợp lệ');
-        return;
-      }
-
-      setDarkMode(importedData.darkMode || false);
-      setChapters(importedData.chapters);
-      setCurrentChapter(importedData.currentChapter || 0);
-      setFontSize(importedData.fontSize || 18);
-      
-      setShowImportModal(false);
-      setImportText('');
-      showToast(`✅ Đã nhập ${importedData.chapters.length} chương thành công!`);
-    } catch (error) {
-      console.error('Lỗi khi nhập dữ liệu:', error);
-      showToast('❌ Dữ liệu JSON không hợp lệ');
-    }
-  };
-
   const importData = (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
+    const file = event.target.files[0];
+    if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const importedData = JSON.parse(e.target.result);
-      
-      if (!importedData.chapters || !Array.isArray(importedData.chapters)) {
-        showToast('❌ File không hợp lệ');
-        return;
-      }
-
-      // Set state
-      setDarkMode(importedData.darkMode || false);
-      setChapters(importedData.chapters);
-      setCurrentChapter(importedData.currentChapter || 0);
-      setFontSize(importedData.fontSize || 18);
-      
-      // LƯU NGAY VÀO LOCALSTORAGE (THÊM ĐOẠN NÀY)
+    const reader = new FileReader();
+    reader.onload = (e) => {
       try {
-        const dataToSave = {
-          darkMode: importedData.darkMode || false,
-          chapters: importedData.chapters,
-          currentChapter: importedData.currentChapter || 0,
-          fontSize: importedData.fontSize || 18
-        };
-        localStorage.setItem('readerAppData_v2', JSON.stringify(dataToSave));
-        showToast(`✅ Đã nhập và lưu ${importedData.chapters.length} chương!`);
-      } catch (saveError) {
-        console.error('Lỗi khi lưu vào localStorage:', saveError);
-        showToast('⚠️ Đã nhập nhưng có thể chưa lưu được');
+        const importedData = JSON.parse(e.target.result);
+        
+        if (!importedData.chapters || !Array.isArray(importedData.chapters)) {
+          showToast('❌ File không hợp lệ');
+          return;
+        }
+
+        setDarkMode(importedData.darkMode || false);
+        setChapters(importedData.chapters);
+        setCurrentChapter(importedData.currentChapter || 0);
+        setFontSize(importedData.fontSize || 18);
+        
+        try {
+          const dataToSave = {
+            darkMode: importedData.darkMode || false,
+            chapters: importedData.chapters,
+            currentChapter: importedData.currentChapter || 0,
+            fontSize: importedData.fontSize || 18
+          };
+          localStorage.setItem('readerAppData_v2', JSON.stringify(dataToSave));
+          
+          const verified = localStorage.getItem('readerAppData_v2');
+          if (verified) {
+            showToast(`✅ Đã nhập và lưu ${importedData.chapters.length} chương!`);
+          } else {
+            showToast(`⚠️ Đã nhập ${importedData.chapters.length} chương. Nhấn "💾 Lưu ngay"!`);
+          }
+        } catch (saveError) {
+          console.error('Lỗi khi lưu:', saveError);
+          showToast(`⚠️ Đã nhập ${importedData.chapters.length} chương. PHẢI nhấn "💾 Lưu ngay"!`);
+        }
+      } catch (error) {
+        console.error('Lỗi khi nhập dữ liệu:', error);
+        showToast('❌ File JSON không hợp lệ');
       }
-    } catch (error) {
-      console.error('Lỗi khi nhập dữ liệu:', error);
-      showToast('❌ File JSON không hợp lệ');
-    }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
   };
-  reader.readAsText(file);
-  event.target.value = '';
-};
 
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files).filter(f => 
@@ -395,21 +390,16 @@ export default function OfflineReaderApp() {
         
         let html = result.value;
         
-        // Xóa các thẻ <p> chỉ chứa 1 dấu chấm
         html = html.replace(/<p[^>]*>\s*\.\s*<\/p>/gi, '');
-        
         html = html.replace(/<p>\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p>\s*…\s*<\/p>/gi, '');
         html = html.replace(/<p[^>]*>\s*\.\s*\.\s*\.\s*<\/p>/gi, '');
         html = html.replace(/<p[^>]*>\s*…\s*<\/p>/gi, '');
         
-        // Xóa dòng điều hướng ở cuối
         const lines = html.split('</p>');
         const filtered = lines.filter(line => {
-          // Xóa dòng có cả 4 từ: Trước, Bình, luận, Kế
           const hasNav = line.includes('Trước') && line.includes('Bình') && line.includes('luận') && line.includes('Kế');
-          // Xóa dòng "phạm vi hiệu lực" với mũi tên
           const hasScope = line.includes('phạm vi hiệu lực') && (line.includes('↑') || line.includes('↲'));
           return !hasNav && !hasScope;
         });
@@ -437,7 +427,67 @@ export default function OfflineReaderApp() {
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-amber-50'} transition-colors duration-300`}>
-      {/* Header */}
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+        .prose p {
+          margin-bottom: 1.25em;
+        }
+        .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+          color: ${darkMode ? '#f3f4f6' : '#1f2937'};
+          margin-top: 1.5em;
+          margin-bottom: 0.75em;
+          font-weight: 600;
+        }
+        .prose ul, .prose ol {
+          margin: 1em 0;
+          padding-left: 1.5em;
+        }
+        .prose li {
+          margin: 0.5em 0;
+        }
+        .prose blockquote {
+          border-left: 4px solid ${darkMode ? '#60a5fa' : '#3b82f6'};
+          padding: 16px 20px;
+          margin: 1.5em 0;
+          background: ${darkMode ? '#1f2937' : '#f0f9ff'};
+          border-radius: 4px;
+          font-style: normal;
+        }
+        .prose hr {
+          border: none;
+          border-top: 2px solid ${darkMode ? '#374151' : '#e5e7eb'};
+          margin: 2em 0;
+        }
+        .prose table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 1.5em 0;
+          background: ${darkMode ? '#1f2937' : '#ffffff'};
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .prose th, .prose td {
+          padding: 12px 16px;
+          text-align: left;
+          border: 1px solid ${darkMode ? '#374151' : '#e5e7eb'};
+        }
+        .prose th {
+          background: ${darkMode ? '#374151' : '#f3f4f6'};
+          font-weight: 600;
+          color: ${darkMode ? '#f9fafb' : '#1f2937'};
+        }
+        .prose tr:hover {
+          background: ${darkMode ? '#374151' : '#f9fafb'};
+        }
+      `}</style>
+
       <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b fixed top-0 left-0 right-0 z-20 shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
@@ -510,7 +560,6 @@ export default function OfflineReaderApp() {
         </div>
       </div>
 
-      {/* Search Panel */}
       {showSearch && (
         <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b fixed top-[57px] left-0 right-0 z-10 transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-[57px]'}`}>
           <div className="max-w-4xl mx-auto px-4 py-3">
@@ -565,36 +614,41 @@ export default function OfflineReaderApp() {
             <div className="mt-2 text-xs opacity-60 text-center">
               {chapters.length} / 3000 chương
             </div>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <button
-                onClick={exportData}
-                className="text-xs bg-blue-500 hover:bg-blue-600 text-white py-2 rounded transition-colors"
-              >
-                💾 Tải file
-              </button>
-              <button
-                onClick={copyDataToClipboard}
-                className="text-xs bg-purple-500 hover:bg-purple-600 text-white py-2 rounded transition-colors"
-              >
-                📋 Copy JSON
-              </button>
-              <label className="col-span-1">
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={importData}
-                  className="hidden"
-                />
-                <div className="text-xs bg-green-500 hover:bg-green-600 text-white py-2 rounded transition-colors cursor-pointer text-center">
-                  📁 Chọn file
-                </div>
-              </label>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="text-xs bg-orange-500 hover:bg-orange-600 text-white py-2 rounded transition-colors"
-              >
-                📝 Paste JSON
-              </button>
+            <div className="flex flex-col gap-2 mt-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={exportData}
+                  className="flex-1 text-xs bg-blue-500 hover:bg-blue-600 text-white py-2 rounded transition-colors"
+                >
+                  📥 Xuất dữ liệu
+                </button>
+                <label className="flex-1">
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={importData}
+                    className="hidden"
+                  />
+                  <div className="text-xs bg-green-500 hover:bg-green-600 text-white py-2 rounded transition-colors cursor-pointer text-center">
+                    📤 Nhập dữ liệu
+                  </div>
+                </label>
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={forceSave}
+                  className="flex-1 text-xs bg-purple-500 hover:bg-purple-600 text-white py-2 rounded transition-colors font-bold"
+                >
+                  💾 Lưu ngay
+                </button>
+                <button
+                  onClick={checkStorage}
+                  className="flex-1 text-xs bg-orange-500 hover:bg-orange-600 text-white py-2 rounded transition-colors"
+                >
+                  📦 Kiểm tra
+                </button>
+              </div>
             </div>
             {chapters.length > 10 && (
               <button
@@ -608,39 +662,6 @@ export default function OfflineReaderApp() {
         </div>
       )}
 
-      {/* Navigation - HIDDEN */}
-      {false && (
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b fixed ${showSearch ? 'top-[320px]' : 'top-[57px]'} left-0 right-0 z-10 transition-transform duration-300 ${showHeader ? 'translate-y-0' : (showSearch ? '-translate-y-[377px]' : '-translate-y-[57px]')}`}>
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button
-            onClick={() => changeChapter(currentChapter - 1)}
-            className={`flex items-center gap-1 px-3 py-2 rounded transition-colors ${
-              darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            <ChevronLeft size={18} />
-            <span className="text-sm">Trước</span>
-          </button>
-          
-          <div className={`text-center ${darkMode ? 'text-white' : 'text-gray-800'}`}>
-            <div className="font-semibold text-sm truncate max-w-xs">{chapters[currentChapter]?.title}</div>
-            <div className="text-xs opacity-60">{currentChapter + 1} / {chapters.length}</div>
-          </div>
-          
-          <button
-            onClick={() => changeChapter(currentChapter + 1)}
-            className={`flex items-center gap-1 px-3 py-2 rounded transition-colors ${
-              darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            <span className="text-sm">Sau</span>
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      </div>
-      )}
-
-      {/* Content */}
       <div
         key={currentChapter}
         ref={contentRef}
@@ -685,7 +706,6 @@ export default function OfflineReaderApp() {
         )}
       </div>
 
-      {/* Jump Modal */}
       {showJumpModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg p-6 max-w-sm w-full`}>
@@ -727,56 +747,12 @@ export default function OfflineReaderApp() {
         </div>
       )}
 
-      {/* Import Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-lg p-6 max-w-md w-full`}>
-            <h3 className={`text-lg font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
-              📝 Nhập dữ liệu JSON
-            </h3>
-            <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Paste nội dung JSON đã copy vào ô bên dưới:
-            </p>
-            <textarea
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              placeholder='{"darkMode":false,"chapters":[...]}'
-              rows={8}
-              className={`w-full px-4 py-2 rounded-lg border font-mono text-xs ${
-                darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-800'
-              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-            />
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={pasteDataFromText}
-                className="flex-1 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                ✅ Nhập
-              </button>
-              <button
-                onClick={() => {
-                  setShowImportModal(false);
-                  setImportText('');
-                }}
-                className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
-                  darkMode ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
-                }`}
-              >
-                Hủy
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast */}
       {toast.show && (
         <div className="fixed bottom-20 left-4 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg z-50 animate-fade-in max-w-sm">
           {toast.message}
         </div>
       )}
 
-      {/* Bottom Navigation */}
       <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-t fixed bottom-0 left-0 right-0 z-20 shadow-lg`}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <button
@@ -804,67 +780,6 @@ export default function OfflineReaderApp() {
           </button>
         </div>
       </div>
-
-      <style>{`
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-        .prose p {
-          margin-bottom: 1.25em;
-        }
-        .prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
-          color: ${darkMode ? '#f3f4f6' : '#1f2937'};
-          margin-top: 1.5em;
-          margin-bottom: 0.75em;
-          font-weight: 600;
-        }
-        .prose ul, .prose ol {
-          margin: 1em 0;
-          padding-left: 1.5em;
-        }
-        .prose li {
-          margin: 0.5em 0;
-        }
-        .prose blockquote {
-          border-left: 4px solid ${darkMode ? '#60a5fa' : '#3b82f6'};
-          padding: 16px 20px;
-          margin: 1.5em 0;
-          background: ${darkMode ? '#1f2937' : '#f0f9ff'};
-          border-radius: 4px;
-          font-style: normal;
-        }
-        .prose hr {
-          border: none;
-          border-top: 2px solid ${darkMode ? '#374151' : '#e5e7eb'};
-          margin: 2em 0;
-        }
-        .prose table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 1.5em 0;
-          background: ${darkMode ? '#1f2937' : '#ffffff'};
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .prose th, .prose td {
-          padding: 12px 16px;
-          text-align: left;
-          border: 1px solid ${darkMode ? '#374151' : '#e5e7eb'};
-        }
-        .prose th {
-          background: ${darkMode ? '#374151' : '#f3f4f6'};
-          font-weight: 600;
-          color: ${darkMode ? '#f9fafb' : '#1f2937'};
-        }
-        .prose tr:hover {
-          background: ${darkMode ? '#374151' : '#f9fafb'};
-        }
-      `}</style>
     </div>
   );
 }
