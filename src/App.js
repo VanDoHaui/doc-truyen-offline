@@ -124,20 +124,29 @@ export default function OfflineReaderApp() {
 
   // Tự động ẩn/hiện header khi scroll
   useEffect(() => {
+    let ticking = false;
+    
     const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      
-      if (currentScrollY < 50) {
-        setShowHeader(true);
-      } else if (currentScrollY > lastScrollY) {
-        // Scroll xuống - ẩn header
-        setShowHeader(false);
-      } else {
-        // Scroll lên - hiện header
-        setShowHeader(true);
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentScrollY = window.scrollY;
+          
+          if (currentScrollY < 100) {
+            setShowHeader(true);
+          } else if (currentScrollY > lastScrollY && currentScrollY > 150) {
+            // Scroll xuống - ẩn header
+            setShowHeader(false);
+          } else if (currentScrollY < lastScrollY) {
+            // Scroll lên - hiện header
+            setShowHeader(true);
+          }
+          
+          setLastScrollY(currentScrollY);
+          ticking = false;
+        });
+        
+        ticking = true;
       }
-      
-      setLastScrollY(currentScrollY);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -301,7 +310,7 @@ export default function OfflineReaderApp() {
   };
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`} style={{ touchAction: 'pan-y' }}>
       {loading && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 max-w-xs w-full mx-4 text-center`}>
@@ -542,7 +551,14 @@ export default function OfflineReaderApp() {
         onDrop={handleDrop}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+        onTouchStart={(e) => {
+          // Chặn vuốt ngang browser mặc định
+          if (e.touches.length === 1) {
+            e.currentTarget.style.touchAction = 'pan-y';
+          }
+        }}
         className="max-w-4xl mx-auto px-4 pt-20 pb-8 min-h-screen"
+        style={{ touchAction: 'pan-y' }}
       >
         {dragOver && (
           <div className="fixed inset-4 border-4 border-dashed border-blue-500 rounded-xl bg-blue-500/10 flex items-center justify-center z-30">
