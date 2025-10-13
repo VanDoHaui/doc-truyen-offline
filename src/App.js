@@ -200,6 +200,12 @@ export default function OfflineReaderApp() {
         const result = await mammoth.convertToHtml({ arrayBuffer });
         let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
         
+        // Xóa các dòng rác cụ thể (chỉ xóa dòng ngắn chứa ký tự đặc biệt)
+        html = html.replace(/<p>─[^<]{0,100}─<\/p>/g, '');
+        html = html.replace(/<p>[^<]{0,20}Trước[^<]{0,20}Bình[^<]{0,20}luân[^<]{0,20}Kế[^<]{0,20}<\/p>/g, '');
+        html = html.replace(/<p>Thúc đẩy nghề lan \d+[^<]{0,200}<\/p>/g, '');
+        html = html.replace(/<p>Chưa Thúc đẩy nghề[^<]{0,200}<\/p>/g, '');
+        
         // Chuyển các bảng thành khung thông tin đẹp
         html = html.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, content) => {
           // Loại bỏ các thẻ table, tbody, tr, td và giữ lại nội dung
@@ -212,9 +218,45 @@ export default function OfflineReaderApp() {
           return `<div class="info-box">${cleanContent}</div>`;
         });
         
-        // Nhận diện và format thông tin nhân vật dạng "Tên : Grid"
-        html = html.replace(/^(Tên|Cấp độ|Lớp nghề|Danh hiệu|Khéo tay)\s*:\s*(.+)$/gm, 
+        // Nhận diện và format thông tin nhân vật dạng "Tên : Grid" (bao gồm cả Danh hiệu trong <p>)
+        html = html.replace(/<p>(Tên|Cấp độ|Lớp nghề|Danh hiệu)\s*:\s*([^<]+)<\/p>/g, 
           '<div class="char-stat"><span class="char-label">$1</span><span class="char-sep">:</span><span class="char-value">$2</span></div>');
+        
+        // Nhận diện tiêu đề [Chi tiết Năng lực]
+        html = html.replace(/^\[([^\]]+)\]$/gm, '<div class="section-title">[$1]</div>');
+        
+        // Xử lý các dòng chỉ số trong thẻ <p>
+        html = html.replace(/<p>([^<:]+)\s*:\s*([^<]+)<\/p>/g, (match, label, value) => {
+          // Loại trừ các trường hợp đặc biệt
+          if (label.includes('[') || label.includes(']') || label.trim().length < 2) {
+            return match;
+          }
+          return `<div class="stat-line" data-label="${label.trim()}" data-value="${value.trim()}"></div>`;
+        });
+        
+        // Nhóm các stat-line liên tiếp thành grid 2 cột
+        html = html.replace(/(<div class="stat-line"[^>]*><\/div>\s*)+/g, (match) => {
+          const statMatches = match.matchAll(/<div class="stat-line" data-label="([^"]*)" data-value="([^"]*)"><\/div>/g);
+          const stats = Array.from(statMatches).map(m => ({ label: m[1], value: m[2] }));
+          
+          if (stats.length === 0) return match;
+          
+          const midPoint = Math.ceil(stats.length / 2);
+          const col1 = stats.slice(0, midPoint);
+          const col2 = stats.slice(midPoint);
+          
+          let gridHTML = '<div class="stats-grid-container"><div class="stats-column">';
+          col1.forEach(stat => {
+            gridHTML += `<div class="detail-stat"><span class="detail-label">${stat.label}</span><span class="detail-sep">:</span><span class="detail-value">${stat.value}</span></div>`;
+          });
+          gridHTML += '</div><div class="stats-column">';
+          col2.forEach(stat => {
+            gridHTML += `<div class="detail-stat"><span class="detail-label">${stat.label}</span><span class="detail-sep">:</span><span class="detail-value">${stat.value}</span></div>`;
+          });
+          gridHTML += '</div></div>';
+          
+          return gridHTML;
+        });
         
         html = html.replace(/\[([^\]]+)\]/g, '<span class="item-name">[$1]</span>');
         html = html.replace(/Xếp hạng\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Xếp hạng:</span><span class="stat-value">$1</span></div>');
@@ -570,15 +612,82 @@ export default function OfflineReaderApp() {
         )}
 
         <style>{`
+          .section-title {
+            background: ${darkMode ? 'linear-gradient(135deg, #1e3a8a 0%, #6366f1 100%)' : 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)'};
+            color: ${darkMode ? '#e0e7ff' : 'white'};
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1.1em;
+            text-align: center;
+            margin: 20px 0 12px 0;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          }
+          .stats-grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 12px 0;
+            padding: 12px;
+            background: ${darkMode ? '#0f172a' : '#f8fafc'};
+            border-radius: 8px;
+            border: 1px solid ${darkMode ? '#1e293b' : '#e2e8f0'};
+            line-height: 1.4 !important;
+          }
+          @media (max-width: 768px) {
+            .stats-grid-container {
+              grid-template-columns: 1fr;
+            }
+          }
+          .stats-column {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+          }
+          .detail-stat {
+            display: grid;
+            grid-template-columns: 110px 15px 1fr;
+            padding: 8px 10px;
+            background: ${darkMode ? '#1e293b' : '#ffffff'};
+            align-items: center;
+            font-size: 0.9em;
+            border-radius: 4px;
+            border: 1px solid ${darkMode ? '#334155' : '#e2e8f0'};
+            line-height: 1.3 !important;
+          }
+          .detail-stat:hover {
+            background: ${darkMode ? '#334155' : '#f1f5f9'};
+            border-color: ${darkMode ? '#475569' : '#cbd5e1'};
+          }
+          .detail-label {
+            font-weight: 600;
+            color: ${darkMode ? '#94a3b8' : '#475569'};
+            text-align: left;
+            font-size: 0.9em;
+          }
+          .detail-sep {
+            color: ${darkMode ? '#64748b' : '#94a3b8'};
+            text-align: center;
+            font-weight: 500;
+          }
+          .detail-value {
+            color: ${darkMode ? '#a5b4fc' : '#4f46e5'};
+            font-weight: 600;
+            text-align: left;
+            font-size: 0.95em;
+          }
           .info-box {
-            border: 2px solid ${darkMode ? '#3b82f6' : '#2563eb'};
-            background: ${darkMode ? '#1e3a5f' : '#eff6ff'};
+            border: 2px solid ${darkMode ? '#334155' : '#cbd5e1'};
+            background: ${darkMode ? '#1e293b' : '#f8fafc'};
             border-radius: 8px;
             padding: 12px 16px;
             margin: 16px 0;
+            line-height: 1.5 !important;
           }
           .info-box p {
             margin: 8px 0;
+            color: ${darkMode ? '#cbd5e1' : '#475569'};
           }
           .info-box p:first-child {
             margin-top: 0;
@@ -587,17 +696,18 @@ export default function OfflineReaderApp() {
             margin-bottom: 0;
           }
           .info-box strong {
-            color: ${darkMode ? '#60a5fa' : '#1e40af'};
+            color: ${darkMode ? '#818cf8' : '#4f46e5'};
           }
           .char-stat {
             display: grid;
-            grid-template-columns: 120px 20px 1fr;
-            padding: 10px 16px;
-            border: 1px solid ${darkMode ? '#3b82f6' : '#2563eb'};
-            background: ${darkMode ? '#1e293b' : '#f1f5f9'};
+            grid-template-columns: 100px 20px 1fr;
+            padding: 12px 16px;
+            border: 1px solid ${darkMode ? '#334155' : '#cbd5e1'};
+            background: ${darkMode ? '#1e293b' : '#ffffff'};
             margin: 0;
             align-items: center;
             font-size: 1em;
+            line-height: 1.4 !important;
           }
           .char-stat:first-of-type {
             border-top-left-radius: 8px;
@@ -610,25 +720,28 @@ export default function OfflineReaderApp() {
           .char-stat + .char-stat {
             border-top: none;
           }
+          .char-stat:hover {
+            background: ${darkMode ? '#334155' : '#f8fafc'};
+          }
           .char-label {
             font-weight: 700;
-            color: ${darkMode ? '#60a5fa' : '#1e40af'};
+            color: ${darkMode ? '#818cf8' : '#4f46e5'};
             text-align: left;
           }
           .char-sep {
             color: ${darkMode ? '#64748b' : '#94a3b8'};
             text-align: center;
-            font-weight: 600;
+            font-weight: 500;
           }
           .char-value {
-            color: ${darkMode ? '#e2e8f0' : '#1e293b'};
-            font-weight: 500;
+            color: ${darkMode ? '#a5b4fc' : '#6366f1'};
+            font-weight: 600;
             text-align: left;
           }
           .item-name {
             display: inline-block;
-            background: ${darkMode ? '#1e40af' : '#3b82f6'};
-            color: white;
+            background: ${darkMode ? '#334155' : '#3b82f6'};
+            color: ${darkMode ? '#cbd5e1' : 'white'};
             padding: 2px 8px;
             border-radius: 4px;
             font-weight: 600;
@@ -638,18 +751,18 @@ export default function OfflineReaderApp() {
           .stat-row {
             display: flex;
             padding: 6px 12px;
-            border-bottom: 1px solid ${darkMode ? '#374151' : '#e5e7eb'};
-            background: ${darkMode ? '#1f2937' : '#f9fafb'};
+            border-bottom: 1px solid ${darkMode ? '#334155' : '#e5e7eb'};
+            background: ${darkMode ? '#1e293b' : '#f9fafb'};
             margin: 2px 0;
           }
           .stat-label {
             font-weight: 600;
             min-width: 100px;
-            color: ${darkMode ? '#9ca3af' : '#6b7280'};
+            color: ${darkMode ? '#94a3b8' : '#6b7280'};
           }
           .stat-value {
             flex: 1;
-            color: ${darkMode ? '#e5e7eb' : '#374151'};
+            color: ${darkMode ? '#cbd5e1' : '#374151'};
           }
         `}</style>
 
