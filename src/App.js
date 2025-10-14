@@ -341,7 +341,7 @@ export default function OfflineReaderApp() {
   };
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`} style={{ touchAction: 'pan-y' }}>
+  <div className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-gray-50 text-gray-900'}`} style={{ touchAction: 'pan-y', backgroundColor: darkMode ? '#1e2846' : '#f9fafb' }}>
       {loading && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 max-w-xs w-full mx-4 text-center`}>
