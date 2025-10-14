@@ -12,7 +12,7 @@ export default function OfflineReaderApp() {
         <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
           <div style="max-width: 900px; margin: 0 auto; display: flex; gap: 40px; align-items: center;">
           <a href="https://ibb.co/JRFBcYZg"><img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="03ld0idgkjv71" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" /></a>
-            <img src="https://ibb.co/JRFBcYZg" alt="Overgeared" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" />
+            
             <div style="flex: 1; color: white;">
               <h1 style="font-size: 3em; margin: 12px 0 20px 0; font-weight: 700; color: white;">Overgeared</h1>
               <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Author:</strong> Park Saenal (박새날)</p>
