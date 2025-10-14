@@ -16,3 +16,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+html, body {
+  height: 100%;
+  margin: 0;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
