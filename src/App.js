@@ -3,12 +3,29 @@ import { Moon, Sun, Upload, Menu, X, BookOpen, Download, FileUp, Save, Database,
 import mammoth from 'mammoth';
 
 export default function OfflineReaderApp() {
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   const [chapters, setChapters] = useState([
     {
       id: 1,
-      title: 'Chương mẫu',
-      content: '<p>Chào mừng đến với ứng dụng đọc truyện! 📚</p><p>Dùng mũi tên trái/phải để chuyển chương.</p>'
+      title: 'Overgeared',
+      content: `
+        <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
+          <div style="max-width: 900px; margin: 0 auto; display: flex; gap: 40px; align-items: center;">
+            <img src="https://i.imgur.com/YXQg7bZ.jpeg" alt="Overgeared" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" />
+            <div style="flex: 1; color: white;">
+              <h1 style="font-size: 3em; margin: 12px 0 20px 0; font-weight: 700; color: white;">Overgeared</h1>
+              <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Author:</strong> Park Saenal (박새날)</p>
+              <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Translator:</strong> rainbowturtle</p>
+              <p style="font-size: 0.95em; line-height: 1.6; color: #cbd5e1; margin-top: 20px;">
+                Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...
+              </p>
+              <button id="readingButton" style="margin-top: 28px; background: #3b82f6; color: white; border: none; padding: 16px 48px; border-radius: 8px; font-size: 1.1em; font-weight: 600; cursor: pointer; width: 100%; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); transition: all 0.3s;" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">
+                START READING
+              </button>
+            </div>
+          </div>
+        </div>
+      `
     }
   ]);
   const [currentChapter, setCurrentChapter] = useState(0);
@@ -41,6 +58,17 @@ export default function OfflineReaderApp() {
       setCurrentChapter(data.currentChapter);
       setFontSize(data.fontSize);
       setLineHeight(data.lineHeight);
+      
+      // Cập nhật nút khi load lại
+      setTimeout(() => {
+        const btn = document.getElementById('readingButton');
+        if (btn && data.currentChapter === 0) {
+          if (data.chapters.length > 1) {
+            btn.textContent = 'CONTINUE READING';
+            btn.onclick = () => changeChapter(data.currentChapter > 0 ? data.currentChapter : 1);
+          }
+        }
+      }, 100);
     }
   };
 
@@ -59,7 +87,19 @@ export default function OfflineReaderApp() {
     window.scrollTo(0, 0);
     setShowHeader(true);
     setLastScrollY(0);
-  }, [currentChapter]);
+    
+    // Cập nhật nút START/CONTINUE READING
+    const btn = document.getElementById('readingButton');
+    if (btn && currentChapter === 0) {
+      if (chapters.length > 1) {
+        btn.textContent = 'CONTINUE READING';
+        btn.onclick = () => changeChapter(1);
+      } else {
+        btn.textContent = 'START READING';
+        btn.onclick = () => changeChapter(1);
+      }
+    }
+  }, [currentChapter, chapters.length]);
 
   useEffect(() => {
     let ticking = false;
