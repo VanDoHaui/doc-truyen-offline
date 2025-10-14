@@ -9,19 +9,20 @@ export default function OfflineReaderApp() {
       id: 1,
       title: 'Overgeared',
       content: `
-        <div style="background: #1e2846 !important; padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
-          <div style="max-width: 900px; margin: 0 auto;">
-            <div style="display: flex; gap: 40px; align-items: center; flex-wrap: wrap; margin-bottom: 50px;">
-              <img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="Overgeared Cover" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" />
-              
-              <div style="flex: 1; color: white;">
-                <h1 style="font-size: 3em; margin: 12px 0 20px 0; font-weight: 700; color: white;">Overgeared</h1>
-                <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Author:</strong> Park Saenal (박새날)</p>
-                <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Translator:</strong> rainbowturtle</p>
-                <p style="font-size: 0.95em; line-height: 1.6; color: #cbd5e1; margin-top: 20px;">
-                  Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...
-                </p>
-              </div>
+        <div style="background: #1e2846; padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
+          <div style="max-width: 900px; margin: 0 auto; display: flex; gap: 40px; align-items: center;">
+          <a href="https://ibb.co/JRFBcYZg"><img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="03ld0idgkjv71" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" /></a>
+            
+            <div style="flex: 1; color: white;">
+              <h1 style="font-size: 3em; margin: 12px 0 20px 0; font-weight: 700; color: white;">Overgeared</h1>
+              <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Author:</strong> Park Saenal (박새날)</p>
+              <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Translator:</strong> rainbowturtle</p>
+              <p style="font-size: 0.95em; line-height: 1.6; color: #cbd5e1; margin-top: 20px;">
+                Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...
+              </p>
+              <button id="readingButton" style="margin-top: 28px; background: #3b82f6; color: white; border: none; padding: 16px 48px; border-radius: 8px; font-size: 1.1em; font-weight: 600; cursor: pointer; width: 100%; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); transition: all 0.3s;" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">
+                START READING
+              </button>
             </div>
           </div>
         </div>
@@ -35,7 +36,6 @@ export default function OfflineReaderApp() {
   const [searchTerm, setSearchTerm] = useState('');
   const [jumpPage, setJumpPage] = useState('');
   const [showJumpModal, setShowJumpModal] = useState(false);
-  const [showChapterList, setShowChapterList] = useState(false);
   const [fontSize, setFontSize] = useState(18);
   const [lineHeight, setLineHeight] = useState(1.8);
   const [mounted, setMounted] = useState(false);
@@ -60,6 +60,7 @@ export default function OfflineReaderApp() {
       setFontSize(data.fontSize);
       setLineHeight(data.lineHeight);
       
+      // Cập nhật nút khi load lại
       setTimeout(() => {
         const btn = document.getElementById('readingButton');
         if (btn && data.currentChapter === 0) {
@@ -87,7 +88,18 @@ export default function OfflineReaderApp() {
     window.scrollTo(0, 0);
     setShowHeader(true);
     setLastScrollY(0);
-    setShowChapterList(currentChapter === 0 && chapters.length > 1);
+    
+    // Cập nhật nút START/CONTINUE READING
+    const btn = document.getElementById('readingButton');
+    if (btn && currentChapter === 0) {
+      if (chapters.length > 1) {
+        btn.textContent = 'CONTINUE READING';
+        btn.onclick = () => changeChapter(1);
+      } else {
+        btn.textContent = 'START READING';
+        btn.onclick = () => changeChapter(1);
+      }
+    }
   }, [currentChapter, chapters.length]);
 
   useEffect(() => {
@@ -165,41 +177,39 @@ export default function OfflineReaderApp() {
         const result = await mammoth.convertToHtml({ arrayBuffer });
         let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
         
+        // Xóa từ dòng "←Trước Bình ↓ luận Kế→" trở xuống hết
         const indexTruoc = html.indexOf('←');
         const indexKe = html.indexOf('Kế');
         if (indexTruoc !== -1 && indexKe !== -1 && indexKe > indexTruoc) {
+          // Tìm thẻ <p> bắt đầu chứa "←Trước"
           let startIndex = html.lastIndexOf('<p', indexTruoc);
           if (startIndex !== -1) {
             html = html.substring(0, startIndex);
           }
         }
         
+        // Xóa các dòng chỉ chứa dấu chấm (bullets)
         html = html.replace(/<p>[\s·•∙․⋅]*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*\.\s*<\/p>/g, '');
+        
+        // Xóa các thẻ <hr>, <hr/>, và dòng kẻ ngang
         html = html.replace(/<hr\s*\/?>/g, '');
         html = html.replace(/<p>\s*[-─═_]+\s*<\/p>/g, '');
+        
+        // Xóa các thẻ <p> trống
         html = html.replace(/<p>\s*<\/p>/g, '');
         
-        html = html.replace(/<p>\s*\d+\s*\/\s*\d+\s*<\/p>/g, '');
-        html = html.replace(/\d+\s*\/\s*\d+/g, '');
-        
-        html = html.replace(/<sup[^>]*>.*?<\/sup>/g, '');
-        html = html.replace(/<sub[^>]*>.*?<\/sub>/g, '');
-        html = html.replace(/\[\d+\]/g, '');
-        
         html = html.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, content) => {
-          let text = content
+          let cleanContent = content
             .replace(/<\/?tbody[^>]*>/g, '')
             .replace(/<tr[^>]*>/g, '')
             .replace(/<\/tr>/g, '')
-            .replace(/<td[^>]*>/g, '')
-            .replace(/<\/td>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          return `<p style="text-indent: 2em; margin: 1em 0;">${text}</p>`;
+            .replace(/<td[^>]*>/g, '<p>')
+            .replace(/<\/td>/g, '</p>');
+          return `<div class="info-box">${cleanContent}</div>`;
         });
         
         html = html.replace(/<p>(Tên|Cấp độ|Lớp nghề|Danh hiệu)\s*:\s*([^<]+)<\/p>/g, 
@@ -331,7 +341,7 @@ export default function OfflineReaderApp() {
   };
 
   return (
-  <div className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-gray-50 text-gray-900'}`} style={{ touchAction: 'pan-y', backgroundColor: currentChapter === 0 ? '#1e2846' : (darkMode ? '#1e2846' : '#f9fafb') }}>
+  <div className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-gray-50 text-gray-900'}`} style={{ touchAction: 'pan-y', backgroundColor: darkMode ? '#1e2846' : '#f9fafb' }}>
       {loading && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 max-w-xs w-full mx-4 text-center`}>
@@ -346,32 +356,30 @@ export default function OfflineReaderApp() {
         </div>
       )}
 
-      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 right-0 z-20 shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}>
-        <div className="max-w-5xl mx-auto px-3 py-2">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className={`p-1.5 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} rounded-lg`}
-            >
-              {showMenu ? <X size={20} /> : <Menu size={20} />}
-            </button>
-            
-            <div className="flex-1 text-center px-2">
-              <h1 className="text-sm font-bold truncate">
-                Overgeared - Thợ Rèn Huyền Thoại
-              </h1>
-              <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'} truncate`}>
-                {chapters[currentChapter]?.title}
-              </p>
-            </div>
-            
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className={`p-1.5 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} rounded-lg`}
-            >
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 right-0 z-20 shadow-sm`}>
+        <div className="max-w-5xl mx-auto px-3 py-3 flex items-center justify-between">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="p-2 hover:bg-gray-700 rounded-lg"
+          >
+            {showMenu ? <X size={20} /> : <Menu size={20} />}
+          </button>
+          
+          <div className="flex-1 text-center">
+            <h1 className="text-base font-bold truncate px-2">
+              {chapters[currentChapter]?.title}
+            </h1>
+            <p className="text-xs opacity-60">
+              {currentChapter + 1} / {chapters.length}
+            </p>
           </div>
+          
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className="p-2 hover:bg-gray-700 rounded-lg"
+          >
+            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
         </div>
       </div>
 
@@ -578,7 +586,7 @@ export default function OfflineReaderApp() {
             e.currentTarget.style.touchAction = 'pan-y';
           }
         }}
-        className="max-w-4xl mx-auto px-4 pt-16 pb-8 min-h-screen"
+        className="max-w-4xl mx-auto px-4 pt-20 pb-8 min-h-screen"
         style={{ touchAction: 'pan-y' }}
       >
         {dragOver && (
@@ -592,16 +600,16 @@ export default function OfflineReaderApp() {
 
         <style>{`
           .section-title {
-            background: ${darkMode ? 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)' : 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%)'};
-            color: white;
-            padding: 10px 18px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 1em;
+            background: ${darkMode ? 'linear-gradient(135deg, #1e3a8a 0%, #6366f1 100%)' : 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)'};
+            color: ${darkMode ? '#e0e7ff' : 'white'};
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1.1em;
             text-align: center;
-            margin: 18px 0 10px 0;
-            letter-spacing: 0.3px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            margin: 20px 0 12px 0;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
           }
           .stats-grid-container {
             display: grid;
@@ -657,17 +665,16 @@ export default function OfflineReaderApp() {
             font-size: 0.95em;
           }
           .info-box {
-            border: 2px solid ${darkMode ? '#475569' : '#cbd5e1'};
-            background: transparent;
+            border: 2px solid ${darkMode ? '#334155' : '#cbd5e1'};
+            background: ${darkMode ? '#1e293b' : '#f8fafc'};
             border-radius: 8px;
-            padding: 14px 18px;
+            padding: 12px 16px;
             margin: 16px 0;
-            line-height: 1.6 !important;
+            line-height: 1.5 !important;
           }
           .info-box p {
-            margin: 6px 0;
-            color: ${darkMode ? '#e2e8f0' : '#374151'};
-            font-size: 0.95em;
+            margin: 8px 0;
+            color: ${darkMode ? '#cbd5e1' : '#475569'};
           }
           .info-box p:first-child {
             margin-top: 0;
@@ -676,7 +683,7 @@ export default function OfflineReaderApp() {
             margin-bottom: 0;
           }
           .info-box strong {
-            color: ${darkMode ? '#94a3b8' : '#475569'};
+            color: ${darkMode ? '#818cf8' : '#4f46e5'};
           }
           .char-stat {
             display: grid;
@@ -751,30 +758,13 @@ export default function OfflineReaderApp() {
           style={{
             fontSize: `${fontSize}px`,
             lineHeight: `${lineHeight}`,
-            color: darkMode ? '#e5e7eb' : '#374151',
-            fontWeight: '400',
-            letterSpacing: '0.01em'
+            color: darkMode ? '#e5e7eb' : '#374151'
           }}
           dangerouslySetInnerHTML={{ __html: chapters[currentChapter]?.content }}
         />
         
-        {showChapterList && (
-          <div style={{ marginTop: '40px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-            {chapters.slice(1, Math.min(11, chapters.length)).map((ch, idx) => (
-              <div
-                key={ch.id}
-                onClick={() => changeChapter(idx + 1)}
-                className={`${darkMode ? 'bg-blue-600/10 border-blue-500/30 hover:bg-blue-600/20 hover:border-blue-500/50' : 'bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300'} border rounded-lg p-4 cursor-pointer transition-all`}
-              >
-                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} mb-1`}>Chương {idx + 1}</div>
-                <div className="font-semibold text-sm truncate">{ch.title}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        
         <div className="flex justify-between items-center mt-12 pt-6 border-t" style={{ borderColor: darkMode ? '#374151' : '#e5e7eb' }}>
-          {currentChapter > 1 ? (
+          {currentChapter > 0 ? (
             <button
               onClick={() => changeChapter(currentChapter - 1)}
               className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all`}
@@ -784,7 +774,7 @@ export default function OfflineReaderApp() {
             </button>
           ) : <div></div>}
           
-          {currentChapter < chapters.length - 1 && currentChapter > 0 ? (
+          {currentChapter < chapters.length - 1 ? (
             <button
               onClick={() => changeChapter(currentChapter + 1)}
               className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all`}
