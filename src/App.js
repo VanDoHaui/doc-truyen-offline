@@ -2,58 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Moon, Sun, Upload, Menu, X, BookOpen, Download, FileUp, Save, Database, Trash2 } from 'lucide-react';
 import mammoth from 'mammoth';
 
-// IndexedDB Helper
-const DB_NAME = 'DocTruyenDB';
-const DB_VERSION = 1;
-const STORE_NAME = 'chapters';
-
-const openDB = () => {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-  });
-};
-
-const saveToIndexedDB = async (key, value) => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_NAME], 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.put({ id: key, data: value });
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-};
-
-const getFromIndexedDB = async (key) => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_NAME], 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.get(key);
-    request.onsuccess = () => resolve(request.result?.data);
-    request.onerror = () => reject(request.error);
-  });
-};
-
-const clearIndexedDB = async () => {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction([STORE_NAME], 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.clear();
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-};
-
 export default function OfflineReaderApp() {
   const [darkMode, setDarkMode] = useState(true);
   const [chapters, setChapters] = useState([
@@ -78,40 +26,31 @@ export default function OfflineReaderApp() {
   const [showHeader, setShowHeader] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
   const contentRef = useRef(null);
+  const appDataRef = useRef({ darkMode: true, chapters: [], currentChapter: 0, fontSize: 18, lineHeight: 1.8 });
 
   useEffect(() => {
     setMounted(true);
-    loadFromIndexedDB();
+    loadFromMemory();
   }, []);
 
-  const loadFromIndexedDB = async () => {
-    try {
-      const data = await getFromIndexedDB('appData');
-      if (data) {
-        setDarkMode(data.darkMode !== undefined ? data.darkMode : true);
-        if (data.chapters && data.chapters.length > 0) {
-          setChapters(data.chapters);
-        }
-        setCurrentChapter(data.currentChapter || 0);
-        setFontSize(data.fontSize || 18);
-        setLineHeight(data.lineHeight || 1.8);
-      }
-    } catch (error) {
-      console.error('Lỗi load:', error);
+  const loadFromMemory = () => {
+    const data = appDataRef.current;
+    if (data.chapters && data.chapters.length > 0) {
+      setDarkMode(data.darkMode);
+      setChapters(data.chapters);
+      setCurrentChapter(data.currentChapter);
+      setFontSize(data.fontSize);
+      setLineHeight(data.lineHeight);
     }
   };
 
-  const saveToStorage = async () => {
-    try {
-      await saveToIndexedDB('appData', { darkMode, chapters, currentChapter, fontSize, lineHeight });
-    } catch (error) {
-      console.error('Lỗi lưu:', error);
-    }
+  const saveToMemory = () => {
+    appDataRef.current = { darkMode, chapters, currentChapter, fontSize, lineHeight };
   };
 
   useEffect(() => {
     if (mounted && chapters.length > 0) {
-      const timer = setTimeout(() => saveToStorage(), 500);
+      const timer = setTimeout(() => saveToMemory(), 500);
       return () => clearTimeout(timer);
     }
   }, [darkMode, chapters, currentChapter, fontSize, lineHeight, mounted]);
@@ -122,7 +61,6 @@ export default function OfflineReaderApp() {
     setLastScrollY(0);
   }, [currentChapter]);
 
-  // Tự động ẩn/hiện header khi scroll
   useEffect(() => {
     let ticking = false;
     
@@ -134,10 +72,8 @@ export default function OfflineReaderApp() {
           if (currentScrollY < 100) {
             setShowHeader(true);
           } else if (currentScrollY > lastScrollY && currentScrollY > 150) {
-            // Scroll xuống - ẩn header
             setShowHeader(false);
           } else if (currentScrollY < lastScrollY) {
-            // Scroll lên - hiện header
             setShowHeader(true);
           }
           
@@ -200,15 +136,32 @@ export default function OfflineReaderApp() {
         const result = await mammoth.convertToHtml({ arrayBuffer });
         let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
         
-        // Xóa các dòng rác cụ thể (chỉ xóa dòng ngắn chứa ký tự đặc biệt)
-        html = html.replace(/<p>─[^<]{0,100}─<\/p>/g, '');
-        html = html.replace(/<p>[^<]{0,20}Trước[^<]{0,20}Bình[^<]{0,20}luân[^<]{0,20}Kế[^<]{0,20}<\/p>/g, '');
-        html = html.replace(/<p>Thúc đẩy nghề lan \d+[^<]{0,200}<\/p>/g, '');
-        html = html.replace(/<p>Chưa Thúc đẩy nghề[^<]{0,200}<\/p>/g, '');
+        // Xóa từ dòng "←Trước Bình ↓ luận Kế→" trở xuống hết
+        const indexTruoc = html.indexOf('←');
+        const indexKe = html.indexOf('Kế');
+        if (indexTruoc !== -1 && indexKe !== -1 && indexKe > indexTruoc) {
+          // Tìm thẻ <p> bắt đầu chứa "←Trước"
+          let startIndex = html.lastIndexOf('<p', indexTruoc);
+          if (startIndex !== -1) {
+            html = html.substring(0, startIndex);
+          }
+        }
         
-        // Chuyển các bảng thành khung thông tin đẹp
+        // Xóa các dòng chỉ chứa dấu chấm (bullets)
+        html = html.replace(/<p>[\s·•∙․⋅]*<\/p>/g, '');
+        html = html.replace(/<p>\s*\.\s*<\/p>/g, '');
+        html = html.replace(/<p>\s*\.\s*\.\s*<\/p>/g, '');
+        html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/g, '');
+        html = html.replace(/<p>\s*\.\s*\.\s*\.\s*\.\s*<\/p>/g, '');
+        
+        // Xóa các thẻ <hr>, <hr/>, và dòng kẻ ngang
+        html = html.replace(/<hr\s*\/?>/g, '');
+        html = html.replace(/<p>\s*[-─═_]+\s*<\/p>/g, '');
+        
+        // Xóa các thẻ <p> trống
+        html = html.replace(/<p>\s*<\/p>/g, '');
+        
         html = html.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, content) => {
-          // Loại bỏ các thẻ table, tbody, tr, td và giữ lại nội dung
           let cleanContent = content
             .replace(/<\/?tbody[^>]*>/g, '')
             .replace(/<tr[^>]*>/g, '')
@@ -218,23 +171,18 @@ export default function OfflineReaderApp() {
           return `<div class="info-box">${cleanContent}</div>`;
         });
         
-        // Nhận diện và format thông tin nhân vật dạng "Tên : Grid" (bao gồm cả Danh hiệu trong <p>)
         html = html.replace(/<p>(Tên|Cấp độ|Lớp nghề|Danh hiệu)\s*:\s*([^<]+)<\/p>/g, 
           '<div class="char-stat"><span class="char-label">$1</span><span class="char-sep">:</span><span class="char-value">$2</span></div>');
         
-        // Nhận diện tiêu đề [Chi tiết Năng lực]
         html = html.replace(/^\[([^\]]+)\]$/gm, '<div class="section-title">[$1]</div>');
         
-        // Xử lý các dòng chỉ số trong thẻ <p>
         html = html.replace(/<p>([^<:]+)\s*:\s*([^<]+)<\/p>/g, (match, label, value) => {
-          // Loại trừ các trường hợp đặc biệt
           if (label.includes('[') || label.includes(']') || label.trim().length < 2) {
             return match;
           }
           return `<div class="stat-line" data-label="${label.trim()}" data-value="${value.trim()}"></div>`;
         });
         
-        // Nhóm các stat-line liên tiếp thành grid 2 cột
         html = html.replace(/(<div class="stat-line"[^>]*><\/div>\s*)+/g, (match) => {
           const statMatches = match.matchAll(/<div class="stat-line" data-label="([^"]*)" data-value="([^"]*)"><\/div>/g);
           const stats = Array.from(statMatches).map(m => ({ label: m[1], value: m[2] }));
@@ -339,7 +287,7 @@ export default function OfflineReaderApp() {
         setCurrentChapter(data.currentChapter || 0);
         setFontSize(data.fontSize || 18);
         setLineHeight(data.lineHeight || 1.8);
-        await saveToIndexedDB('appData', data);
+        appDataRef.current = data;
         showToast(`✅ Nhập ${data.chapters.length} chương!`);
       } catch (error) {
         showToast('❌ File lỗi');
@@ -399,7 +347,6 @@ export default function OfflineReaderApp() {
           <div className="fixed inset-0 bg-black/50 z-30" onClick={() => setShowMenu(false)}></div>
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 bottom-0 w-80 z-40 overflow-y-auto`}>
             <div className="p-4 space-y-4">
-              {/* Đọc tiếp */}
               <div 
                 onClick={() => {
                   setShowMenu(false);
@@ -547,8 +494,8 @@ export default function OfflineReaderApp() {
                   </div>
                 </label>
                 <button
-                  onClick={async () => {
-                    await saveToStorage();
+                  onClick={() => {
+                    saveToMemory();
                     showToast('✅ Đã lưu!');
                   }}
                   className="py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white text-sm flex items-center justify-center gap-1"
@@ -557,9 +504,9 @@ export default function OfflineReaderApp() {
                   Lưu
                 </button>
                 <button
-                  onClick={async () => {
-                    const data = await getFromIndexedDB('appData');
-                    showToast(data ? `📦 ${data.chapters.length} chương` : '⚠️ Trống');
+                  onClick={() => {
+                    const data = appDataRef.current;
+                    showToast(data.chapters?.length > 0 ? `📦 ${data.chapters.length} chương` : '⚠️ Trống');
                   }}
                   className="py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm flex items-center justify-center gap-1"
                 >
@@ -570,11 +517,11 @@ export default function OfflineReaderApp() {
 
               {chapters.length > 10 && (
                 <button
-                  onClick={async () => {
+                  onClick={() => {
                     if (window.confirm('Xóa tất cả?')) {
-                      await clearIndexedDB();
                       setChapters([{ id: 1, title: 'Chương mẫu', content: '<p>Đã xóa!</p>' }]);
                       setCurrentChapter(0);
+                      appDataRef.current = { darkMode: true, chapters: [], currentChapter: 0, fontSize: 18, lineHeight: 1.8 };
                       showToast('🗑️ Đã xóa');
                     }
                   }}
@@ -594,7 +541,6 @@ export default function OfflineReaderApp() {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
         onTouchStart={(e) => {
-          // Chặn vuốt ngang browser mặc định
           if (e.touches.length === 1) {
             e.currentTarget.style.touchAction = 'pan-y';
           }
