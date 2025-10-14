@@ -9,7 +9,7 @@ export default function OfflineReaderApp() {
       id: 1,
       title: 'Overgeared',
       content: `
-        <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
+        <div style="background: #1e2846; padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
           <div style="max-width: 900px; margin: 0 auto; display: flex; gap: 40px; align-items: center;">
           <a href="https://ibb.co/JRFBcYZg"><img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="03ld0idgkjv71" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" /></a>
             
