@@ -11,7 +11,7 @@ export default function OfflineReaderApp() {
       content: `
         <div style="background: #1e2846; padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
           <div style="max-width: 900px; margin: 0 auto; display: flex; gap: 40px; align-items: center;">
-          <a href="https://ibb.co/JRFBcYZg"><img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="03ld0idgkjv71" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" /></a>
+            <img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="Overgeared" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" />
             
             <div style="flex: 1; color: white;">
               <h1 style="font-size: 3em; margin: 12px 0 20px 0; font-weight: 700; color: white;">Overgeared</h1>
@@ -20,9 +20,6 @@ export default function OfflineReaderApp() {
               <p style="font-size: 0.95em; line-height: 1.6; color: #cbd5e1; margin-top: 20px;">
                 Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...
               </p>
-              <button id="readingButton" style="margin-top: 28px; background: #3b82f6; color: white; border: none; padding: 16px 48px; border-radius: 8px; font-size: 1.1em; font-weight: 600; cursor: pointer; width: 100%; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); transition: all 0.3s;" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'" onclick="window.handleStartReading && window.handleStartReading()">
-                START READING
-              </button>
             </div>
           </div>
         </div>
@@ -44,73 +41,37 @@ export default function OfflineReaderApp() {
   const [showHeader, setShowHeader] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
   const contentRef = useRef(null);
-  const appDataRef = useRef({ darkMode: true, chapters: [], currentChapter: 0, fontSize: 18, lineHeight: 1.8 });
+  const appDataRef = useRef({ darkMode: false, chapters: [], currentChapter: 0, fontSize: 18, lineHeight: 1.8 });
 
   useEffect(() => {
     setMounted(true);
     loadFromMemory();
-    
-    // Setup global handler for reading button
-    window.handleStartReading = () => {
-      const savedData = appDataRef.current;
-      const lastRead = savedData.currentChapter || 0;
-      
-      if (chapters.length > 1) {
-        if (lastRead <= 1) {
-          changeChapter(1); // Start from first uploaded chapter
-        } else {
-          changeChapter(lastRead); // Continue from last read
-        }
-      }
-    };
-    
-    return () => {
-      delete window.handleStartReading;
-    };
   }, []);
 
   const loadFromMemory = () => {
     try {
-      const saved = localStorage.getItem('readerAppData');
-      if (saved) {
-        const data = JSON.parse(saved);
-        setDarkMode(data.darkMode !== undefined ? data.darkMode : true);
-        setChapters(data.chapters && data.chapters.length > 0 ? data.chapters : chapters);
-        setCurrentChapter(data.currentChapter || 0);
-        setFontSize(data.fontSize || 18);
-        setLineHeight(data.lineHeight || 1.8);
-        appDataRef.current = data;
-        
-        setTimeout(() => {
-          updateReadingButton(data);
-        }, 100);
-      }
+      const initialData = {
+        darkMode: false,
+        chapters: chapters,
+        currentChapter: 0,
+        fontSize: 18,
+        lineHeight: 1.8
+      };
+      
+      setDarkMode(initialData.darkMode);
+      setChapters(initialData.chapters);
+      setCurrentChapter(initialData.currentChapter);
+      setFontSize(initialData.fontSize);
+      setLineHeight(initialData.lineHeight);
+      appDataRef.current = initialData;
     } catch (error) {
       console.error('Error loading data:', error);
     }
   };
 
-  const updateReadingButton = (data = null) => {
-    const btn = document.getElementById('readingButton');
-    if (!btn) return;
-    
-    const savedData = data || appDataRef.current;
-    const totalChapters = savedData.chapters?.length || chapters.length;
-    
-    // Nếu chỉ có trang giới thiệu (index 0)
-    if (totalChapters <= 1) {
-      btn.textContent = 'START READING';
-      return;
-    }
-    
-    // Luôn hiển thị START READING
-    btn.textContent = 'START READING';
-  };
-
   const saveToMemory = () => {
     try {
       const data = { darkMode, chapters, currentChapter, fontSize, lineHeight };
-      localStorage.setItem('readerAppData', JSON.stringify(data));
       appDataRef.current = data;
     } catch (error) {
       console.error('Error saving data:', error);
@@ -129,17 +90,6 @@ export default function OfflineReaderApp() {
     window.scrollTo(0, 0);
     setShowHeader(true);
     setLastScrollY(0);
-    
-    if (currentChapter === 0) {
-      updateReadingButton();
-    }
-    
-    // Update global handler with latest state
-    window.handleStartReading = () => {
-      if (chapters.length > 1) {
-        changeChapter(1); // Always go to first uploaded chapter (index 1)
-      }
-    };
   }, [currentChapter, chapters.length]);
 
   useEffect(() => {
@@ -217,11 +167,9 @@ export default function OfflineReaderApp() {
         const result = await mammoth.convertToHtml({ arrayBuffer });
         let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
         
-        // Xóa từ dòng "←Trước Bình ↓ luận Kế→" trở xuống hết
         html = html.replace(/←.*?Trước.*?Bình.*?luận.*?Kế.*?→[\s\S]*/gi, '');
         html = html.replace(/.*?←.*?→.*/g, '');
         
-        // Xóa các thẻ <a> chứa số (cước chú)
         html = html.replace(/<a[^>]*>\s*\[\d+\]\s*<\/a>/g, '');
         html = html.replace(/<a[^>]*>\s*\d+\s*<\/a>/g, '');
         
@@ -388,7 +336,7 @@ export default function OfflineReaderApp() {
   };
 
   return (
-  <div className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-gray-50 text-gray-900'}`} style={{ touchAction: 'pan-y', backgroundColor: darkMode ? '#1e2846' : '#f9fafb' }}>
+  <div className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-white text-gray-900'}`} style={{ touchAction: 'pan-y', backgroundColor: currentChapter === 0 ? '#1e2846' : (darkMode ? '#1e2846' : '#ffffff') }}>
       {loading && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 max-w-xs w-full mx-4 text-center`}>
@@ -404,16 +352,16 @@ export default function OfflineReaderApp() {
       )}
 
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 right-0 z-20 shadow-sm`}>
-        <div className="max-w-5xl mx-auto px-3 py-3 flex items-center justify-between">
+        <div className="flex items-center justify-between py-3">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-2 hover:bg-gray-700 rounded-lg"
+            className="p-2 hover:bg-gray-700 rounded-lg ml-2"
           >
             {showMenu ? <X size={20} /> : <Menu size={20} />}
           </button>
           
-          <div className="flex-1 text-center">
-            <h1 className="text-base font-bold truncate px-2">
+          <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
+            <h1 className="text-base font-bold truncate max-w-xs">
               {chapters[currentChapter]?.title}
             </h1>
             <p className="text-xs opacity-60">
@@ -423,7 +371,7 @@ export default function OfflineReaderApp() {
           
           <button
             onClick={() => setDarkMode(!darkMode)}
-            className="p-2 hover:bg-gray-700 rounded-lg"
+            className="p-2 hover:bg-gray-700 rounded-lg mr-2"
           >
             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
@@ -622,8 +570,8 @@ export default function OfflineReaderApp() {
             e.currentTarget.style.touchAction = 'pan-y';
           }
         }}
-        className="max-w-4xl mx-auto px-4 pt-20 pb-8 min-h-screen"
-        style={{ touchAction: 'pan-y' }}
+        className="mx-auto pt-20 pb-8 min-h-screen"
+        style={{ touchAction: 'pan-y', maxWidth: '1200px', paddingLeft: '24px', paddingRight: '24px' }}
       >
         {dragOver && (
           <div className="fixed inset-4 border-4 border-dashed border-blue-500 rounded-xl bg-blue-500/10 flex items-center justify-center z-30">
@@ -794,32 +742,59 @@ export default function OfflineReaderApp() {
           style={{
             fontSize: `${fontSize}px`,
             lineHeight: `${lineHeight}`,
-            color: darkMode ? '#e5e7eb' : '#374151'
+            color: darkMode ? '#e5e7eb' : '#1f2937',
+            fontWeight: '400',
+            letterSpacing: '0.01em'
           }}
           dangerouslySetInnerHTML={{ __html: chapters[currentChapter]?.content }}
         />
         
-        <div className="flex justify-between items-center mt-12 pt-6 border-t" style={{ borderColor: darkMode ? '#374151' : '#e5e7eb' }}>
-          {currentChapter > 0 ? (
-            <button
-              onClick={() => changeChapter(currentChapter - 1)}
-              className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all`}
-            >
-              <span className="font-bold text-xl">&lt;</span>
-              <span className="text-base">Chương trước</span>
-            </button>
-          ) : <div></div>}
-          
-          {currentChapter < chapters.length - 1 ? (
-            <button
-              onClick={() => changeChapter(currentChapter + 1)}
-              className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all`}
-            >
-              <span className="text-base">Chương sau</span>
-              <span className="font-bold text-xl">&gt;</span>
-            </button>
-          ) : <div></div>}
-        </div>
+        {currentChapter === 0 && chapters.length > 1 && (
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold mb-4 text-white">Danh sách chương</h2>
+            <div className="grid grid-cols-1 gap-3">
+              {chapters.slice(1, Math.min(11, chapters.length)).map((ch, idx) => (
+                <button
+                  key={ch.id}
+                  onClick={() => changeChapter(idx + 1)}
+                  className="bg-white/10 hover:bg-white/20 text-white px-6 py-4 rounded-lg text-left transition-all backdrop-blur-sm border border-white/20"
+                >
+                  <div className="font-semibold">{ch.title}</div>
+                  <div className="text-sm opacity-75 mt-1">Chương {idx + 2}</div>
+                </button>
+              ))}
+            </div>
+            {chapters.length > 11 && (
+              <div className="text-center mt-6 text-white/60 text-sm">
+                Và {chapters.length - 11} chương khác...
+              </div>
+            )}
+          </div>
+        )}
+        
+        {currentChapter !== 0 && (
+          <div className="flex justify-between items-center mt-12">
+            {currentChapter > 0 && (
+              <button
+                onClick={() => changeChapter(currentChapter - 1)}
+                className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all`}
+              >
+                <span className="font-bold text-xl">&lt;</span>
+                <span className="text-base">Chương trước</span>
+              </button>
+            )}
+            
+            {currentChapter < chapters.length - 1 && (
+              <button
+                onClick={() => changeChapter(currentChapter + 1)}
+                className={`px-6 py-3 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-100'} shadow-md flex items-center gap-2 transition-all ml-auto`}
+              >
+                <span className="text-base">Chương sau</span>
+                <span className="font-bold text-xl">&gt;</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {showJumpModal && (
