@@ -20,7 +20,7 @@ export default function OfflineReaderApp() {
               <p style="font-size: 0.95em; line-height: 1.6; color: #cbd5e1; margin-top: 20px;">
                 Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...
               </p>
-              <button id="readingButton" style="margin-top: 28px; background: #3b82f6; color: white; border: none; padding: 16px 48px; border-radius: 8px; font-size: 1.1em; font-weight: 600; cursor: pointer; width: 100%; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); transition: all 0.3s;" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">
+              <button id="readingButton" style="margin-top: 28px; background: #3b82f6; color: white; border: none; padding: 16px 48px; border-radius: 8px; font-size: 1.1em; font-weight: 600; cursor: pointer; width: 100%; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); transition: all 0.3s;" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'" onclick="window.handleStartReading && window.handleStartReading()">
                 START READING
               </button>
             </div>
@@ -49,32 +49,73 @@ export default function OfflineReaderApp() {
   useEffect(() => {
     setMounted(true);
     loadFromMemory();
+    
+    // Setup global handler for reading button
+    window.handleStartReading = () => {
+      const savedData = appDataRef.current;
+      const lastRead = savedData.currentChapter || 0;
+      
+      if (chapters.length > 1) {
+        if (lastRead <= 1) {
+          changeChapter(1); // Start from first uploaded chapter
+        } else {
+          changeChapter(lastRead); // Continue from last read
+        }
+      }
+    };
+    
+    return () => {
+      delete window.handleStartReading;
+    };
   }, []);
 
   const loadFromMemory = () => {
-    const data = appDataRef.current;
-    if (data.chapters && data.chapters.length > 0) {
-      setDarkMode(data.darkMode);
-      setChapters(data.chapters);
-      setCurrentChapter(data.currentChapter);
-      setFontSize(data.fontSize);
-      setLineHeight(data.lineHeight);
-      
-      // Cập nhật nút khi load lại
-      setTimeout(() => {
-        const btn = document.getElementById('readingButton');
-        if (btn && data.currentChapter === 0) {
-          if (data.chapters.length > 1) {
-            btn.textContent = 'CONTINUE READING';
-            btn.onclick = () => changeChapter(data.currentChapter > 0 ? data.currentChapter : 1);
-          }
-        }
-      }, 100);
+    try {
+      const saved = localStorage.getItem('readerAppData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        setDarkMode(data.darkMode !== undefined ? data.darkMode : true);
+        setChapters(data.chapters && data.chapters.length > 0 ? data.chapters : chapters);
+        setCurrentChapter(data.currentChapter || 0);
+        setFontSize(data.fontSize || 18);
+        setLineHeight(data.lineHeight || 1.8);
+        appDataRef.current = data;
+        
+        setTimeout(() => {
+          updateReadingButton(data);
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
     }
   };
 
+  const updateReadingButton = (data = null) => {
+    const btn = document.getElementById('readingButton');
+    if (!btn) return;
+    
+    const savedData = data || appDataRef.current;
+    const totalChapters = savedData.chapters?.length || chapters.length;
+    
+    // Nếu chỉ có trang giới thiệu (index 0)
+    if (totalChapters <= 1) {
+      btn.textContent = 'START READING';
+      return;
+    }
+    
+    // Luôn hiển thị START READING
+    btn.textContent = 'START READING';
+  };
+
   const saveToMemory = () => {
-    appDataRef.current = { darkMode, chapters, currentChapter, fontSize, lineHeight };
+    try {
+      const data = { darkMode, chapters, currentChapter, fontSize, lineHeight };
+      localStorage.setItem('readerAppData', JSON.stringify(data));
+      appDataRef.current = data;
+    } catch (error) {
+      console.error('Error saving data:', error);
+      showToast('❌ Lỗi lưu dữ liệu');
+    }
   };
 
   useEffect(() => {
@@ -89,17 +130,16 @@ export default function OfflineReaderApp() {
     setShowHeader(true);
     setLastScrollY(0);
     
-    // Cập nhật nút START/CONTINUE READING
-    const btn = document.getElementById('readingButton');
-    if (btn && currentChapter === 0) {
-      if (chapters.length > 1) {
-        btn.textContent = 'CONTINUE READING';
-        btn.onclick = () => changeChapter(1);
-      } else {
-        btn.textContent = 'START READING';
-        btn.onclick = () => changeChapter(1);
-      }
+    if (currentChapter === 0) {
+      updateReadingButton();
     }
+    
+    // Update global handler with latest state
+    window.handleStartReading = () => {
+      if (chapters.length > 1) {
+        changeChapter(1); // Always go to first uploaded chapter (index 1)
+      }
+    };
   }, [currentChapter, chapters.length]);
 
   useEffect(() => {
@@ -178,28 +218,29 @@ export default function OfflineReaderApp() {
         let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
         
         // Xóa từ dòng "←Trước Bình ↓ luận Kế→" trở xuống hết
+        html = html.replace(/←.*?Trước.*?Bình.*?luận.*?Kế.*?→[\s\S]*/gi, '');
+        html = html.replace(/.*?←.*?→.*/g, '');
+        
+        // Xóa các thẻ <a> chứa số (cước chú)
+        html = html.replace(/<a[^>]*>\s*\[\d+\]\s*<\/a>/g, '');
+        html = html.replace(/<a[^>]*>\s*\d+\s*<\/a>/g, '');
+        
         const indexTruoc = html.indexOf('←');
         const indexKe = html.indexOf('Kế');
         if (indexTruoc !== -1 && indexKe !== -1 && indexKe > indexTruoc) {
-          // Tìm thẻ <p> bắt đầu chứa "←Trước"
           let startIndex = html.lastIndexOf('<p', indexTruoc);
           if (startIndex !== -1) {
             html = html.substring(0, startIndex);
           }
         }
         
-        // Xóa các dòng chỉ chứa dấu chấm (bullets)
         html = html.replace(/<p>[\s·•∙․⋅]*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/g, '');
         html = html.replace(/<p>\s*\.\s*\.\s*\.\s*\.\s*<\/p>/g, '');
-        
-        // Xóa các thẻ <hr>, <hr/>, và dòng kẻ ngang
         html = html.replace(/<hr\s*\/?>/g, '');
         html = html.replace(/<p>\s*[-─═_]+\s*<\/p>/g, '');
-        
-        // Xóa các thẻ <p> trống
         html = html.replace(/<p>\s*<\/p>/g, '');
         
         html = html.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, content) => {
@@ -212,16 +253,22 @@ export default function OfflineReaderApp() {
           return `<div class="info-box">${cleanContent}</div>`;
         });
         
-        html = html.replace(/<p>(Tên|Cấp độ|Lớp nghề|Danh hiệu)\s*:\s*([^<]+)<\/p>/g, 
-          '<div class="char-stat"><span class="char-label">$1</span><span class="char-sep">:</span><span class="char-value">$2</span></div>');
-        
         html = html.replace(/^\[([^\]]+)\]$/gm, '<div class="section-title">[$1]</div>');
         
         html = html.replace(/<p>([^<:]+)\s*:\s*([^<]+)<\/p>/g, (match, label, value) => {
+          const specialLabels = ['Tên', 'Cấp độ', 'Lớp nghề', 'Danh hiệu', 'Xếp hạng', 'Độ bền', 'Sức Tấn công', 'Tấn công', 'Tốc độ tấn công', 'Tốc độ', 'Sức mạnh', 'Thể lực', 'Sự nhanh nhẹn', 'Trí tuệ', 'Sự bền bỉ', 'Nội lực', 'May mắn', 'HP', 'MP'];
+          
           if (label.includes('[') || label.includes(']') || label.trim().length < 2) {
             return match;
           }
-          return `<div class="stat-line" data-label="${label.trim()}" data-value="${value.trim()}"></div>`;
+          
+          const isSpecialStat = specialLabels.some(sl => label.trim().includes(sl));
+          
+          if (isSpecialStat) {
+            return `<div class="stat-line" data-label="${label.trim()}" data-value="${value.trim()}"></div>`;
+          }
+          
+          return match;
         });
         
         html = html.replace(/(<div class="stat-line"[^>]*><\/div>\s*)+/g, (match) => {
@@ -493,17 +540,6 @@ export default function OfflineReaderApp() {
                   </button>
                 </div>
               </div>
-
-              <button
-                onClick={() => {
-                  setShowJumpModal(true);
-                  setShowMenu(false);
-                }}
-                className="w-full py-3 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium flex items-center justify-center gap-2"
-              >
-                <BookOpen size={18} />
-                Nhảy tới chương
-              </button>
 
               <label className="block">
                 <input
