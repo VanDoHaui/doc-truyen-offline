@@ -3,38 +3,95 @@ import { Moon, Sun, Upload, Menu, X, BookOpen, Download, FileUp, Save, Database,
 import mammoth from 'mammoth';
 
 export default function OfflineReaderApp() {
-  const [darkMode, setDarkMode] = useState(false);
-  const [chapters, setChapters] = useState([
-    {
-      id: 1,
-      title: 'Overgeared',
-      content: `
-        <div style="background: #1e2846; padding: 60px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
-          <div style="max-width: 900px; margin: 0 auto; display: flex; gap: 40px; align-items: center;">
-            <img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="Overgeared" style="width: 280px; height: 400px; object-fit: cover; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); flex-shrink: 0;" />
-            
-            <div style="flex: 1; color: white;">
-              <h1 style="font-size: 3em; margin: 12px 0 20px 0; font-weight: 700; color: white;">Overgeared</h1>
-              <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Author:</strong> Park Saenal (박새날)</p>
-              <p style="font-size: 1em; color: #e2e8f0; margin: 12px 0;"><strong>Translator:</strong> rainbowturtle</p>
-              <p style="font-size: 0.95em; line-height: 1.6; color: #cbd5e1; margin-top: 20px;">
-                Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...
-              </p>
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('readerAppData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        return data.darkMode !== undefined ? data.darkMode : false;
+      }
+    } catch (error) {
+      console.error('Error loading darkMode:', error);
+    }
+    return false;
+  });
+  const [chapters, setChapters] = useState(() => {
+    try {
+      const saved = localStorage.getItem('readerAppData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.chapters && data.chapters.length > 0) {
+          return data.chapters;
+        }
+      }
+    } catch (error) {
+      console.error('Error loading chapters:', error);
+    }
+    return [
+      {
+        id: 1,
+        title: 'Overgeared',
+        content: `
+          <div style="background: #1e2846; padding: 40px 20px 10px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
+            <div style="max-width: 900px; margin: 0 auto;">
+              <div class="overgeared-layout">
+                <img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="Overgeared" class="overgeared-img" />
+                
+                <div class="overgeared-text">
+                  <h1>Overgeared</h1>
+                  <p><strong>Author:</strong> Park Saenal (박새날)</p>
+                  <p><strong>Translator:</strong> rainbowturtle</p>
+                  <p>Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...</p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      `
+        `
+      }
+    ];
+  });
+  const [currentChapter, setCurrentChapter] = useState(() => {
+    try {
+      const saved = localStorage.getItem('readerAppData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        return data.currentChapter || 0;
+      }
+    } catch (error) {
+      console.error('Error loading currentChapter:', error);
     }
-  ]);
-  const [currentChapter, setCurrentChapter] = useState(0);
+    return 0;
+  });
+  const [fontSize, setFontSize] = useState(() => {
+    try {
+      const saved = localStorage.getItem('readerAppData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        return data.fontSize || 18;
+      }
+    } catch (error) {
+      console.error('Error loading fontSize:', error);
+    }
+    return 18;
+  });
+  const [lineHeight, setLineHeight] = useState(() => {
+    try {
+      const saved = localStorage.getItem('readerAppData');
+      if (saved) {
+        const data = JSON.parse(saved);
+        return data.lineHeight || 1.8;
+      }
+    } catch (error) {
+      console.error('Error loading lineHeight:', error);
+    }
+    return 1.8;
+  });
   const [toast, setToast] = useState({ show: false, message: '' });
   const [dragOver, setDragOver] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [jumpPage, setJumpPage] = useState('');
   const [showJumpModal, setShowJumpModal] = useState(false);
-  const [fontSize, setFontSize] = useState(18);
-  const [lineHeight, setLineHeight] = useState(1.8);
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -45,33 +102,12 @@ export default function OfflineReaderApp() {
 
   useEffect(() => {
     setMounted(true);
-    loadFromMemory();
   }, []);
-
-  const loadFromMemory = () => {
-    try {
-      const initialData = {
-        darkMode: false,
-        chapters: chapters,
-        currentChapter: 0,
-        fontSize: 18,
-        lineHeight: 1.8
-      };
-      
-      setDarkMode(initialData.darkMode);
-      setChapters(initialData.chapters);
-      setCurrentChapter(initialData.currentChapter);
-      setFontSize(initialData.fontSize);
-      setLineHeight(initialData.lineHeight);
-      appDataRef.current = initialData;
-    } catch (error) {
-      console.error('Error loading data:', error);
-    }
-  };
 
   const saveToMemory = () => {
     try {
       const data = { darkMode, chapters, currentChapter, fontSize, lineHeight };
+      localStorage.setItem('readerAppData', JSON.stringify(data));
       appDataRef.current = data;
     } catch (error) {
       console.error('Error saving data:', error);
@@ -81,8 +117,7 @@ export default function OfflineReaderApp() {
 
   useEffect(() => {
     if (mounted && chapters.length > 0) {
-      const timer = setTimeout(() => saveToMemory(), 500);
-      return () => clearTimeout(timer);
+      saveToMemory();
     }
   }, [darkMode, chapters, currentChapter, fontSize, lineHeight, mounted]);
 
@@ -352,28 +387,46 @@ export default function OfflineReaderApp() {
       )}
 
       <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 right-0 z-20 shadow-sm`}>
-        <div className="flex items-center justify-between py-3">
+        <div className="flex items-center justify-between py-2 px-2">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-2 hover:bg-gray-700 rounded-lg ml-2"
+            className="p-2 hover:bg-gray-700 rounded-lg flex-shrink-0"
           >
-            {showMenu ? <X size={20} /> : <Menu size={20} />}
+            {showMenu ? <X size={22} /> : <Menu size={22} />}
           </button>
           
           <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
             <h1 className="text-base font-bold truncate max-w-xs">
-              {chapters[currentChapter]?.title}
+              Overgeared - Thợ Rèn Huyền Thoại
             </h1>
-            <p className="text-xs opacity-60">
-              {currentChapter + 1} / {chapters.length}
-            </p>
+            {currentChapter !== 0 && (
+              <div className="flex items-center gap-3 justify-center mt-1">
+                <button
+                  onClick={() => changeChapter(currentChapter - 1)}
+                  disabled={currentChapter === 0}
+                  className="px-2 py-1 hover:bg-gray-700 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <span className="text-base font-bold">&lt;</span>
+                </button>
+                <p className="text-sm opacity-80 font-medium">
+                  Chương {currentChapter}
+                </p>
+                <button
+                  onClick={() => changeChapter(currentChapter + 1)}
+                  disabled={currentChapter >= chapters.length - 1}
+                  className="px-2 py-1 hover:bg-gray-700 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <span className="text-base font-bold">&gt;</span>
+                </button>
+              </div>
+            )}
           </div>
           
           <button
             onClick={() => setDarkMode(!darkMode)}
-            className="p-2 hover:bg-gray-700 rounded-lg mr-2"
+            className="p-2 hover:bg-gray-700 rounded-lg flex-shrink-0"
           >
-            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            {darkMode ? <Sun size={22} /> : <Moon size={22} />}
           </button>
         </div>
       </div>
@@ -571,7 +624,7 @@ export default function OfflineReaderApp() {
           }
         }}
         className="mx-auto pt-20 pb-8 min-h-screen"
-        style={{ touchAction: 'pan-y', maxWidth: '1200px', paddingLeft: '24px', paddingRight: '24px' }}
+        style={{ touchAction: 'pan-y', maxWidth: currentChapter === 0 ? '100%' : '1200px', paddingLeft: currentChapter === 0 ? '0' : '24px', paddingRight: currentChapter === 0 ? '0' : '24px' }}
       >
         {dragOver && (
           <div className="fixed inset-4 border-4 border-dashed border-blue-500 rounded-xl bg-blue-500/10 flex items-center justify-center z-30">
@@ -594,6 +647,62 @@ export default function OfflineReaderApp() {
             margin: 20px 0 12px 0;
             letter-spacing: 0.5px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          }
+          .overgeared-layout {
+            display: flex;
+            gap: 40px;
+            align-items: center;
+          }
+          .overgeared-img {
+            width: 280px;
+            height: 400px;
+            object-fit: cover;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            flex-shrink: 0;
+          }
+          .overgeared-text {
+            flex: 1;
+            color: white;
+          }
+          .overgeared-text h1 {
+            font-size: 3em;
+            margin: 12px 0 20px 0;
+            font-weight: 700;
+            color: white;
+          }
+          .overgeared-text p {
+            font-size: 1em;
+            color: #e2e8f0;
+            margin: 12px 0;
+          }
+          .overgeared-text p:last-child {
+            font-size: 0.95em;
+            line-height: 1.6;
+            color: #cbd5e1;
+            margin-top: 20px;
+          }
+          
+          @media (max-width: 768px) {
+            .overgeared-layout {
+              flex-direction: column;
+              gap: 24px;
+            }
+            .overgeared-img {
+              width: 100%;
+              max-width: 250px;
+              height: auto;
+            }
+            .overgeared-text {
+              width: 100%;
+              text-align: center;
+            }
+            .overgeared-text h1 {
+              font-size: 2.2em;
+            }
+            .overgeared-text p {
+              font-size: 0.95em;
+            }
           }
           .stats-grid-container {
             display: grid;
@@ -750,22 +859,22 @@ export default function OfflineReaderApp() {
         />
         
         {currentChapter === 0 && chapters.length > 1 && (
-          <div className="mt-8">
-            <h2 className="text-2xl font-bold mb-4 text-white">Danh sách chương</h2>
-            <div className="grid grid-cols-1 gap-3">
+          <div style={{ maxWidth: '900px', margin: '8px auto 0', padding: '0 20px' }}>
+            <h2 className="text-xl font-bold mb-3 text-white">Danh sách chương</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {chapters.slice(1, Math.min(11, chapters.length)).map((ch, idx) => (
                 <button
                   key={ch.id}
                   onClick={() => changeChapter(idx + 1)}
-                  className="bg-white/10 hover:bg-white/20 text-white px-6 py-4 rounded-lg text-left transition-all backdrop-blur-sm border border-white/20"
+                  className="bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-lg text-left transition-all backdrop-blur-sm border border-white/20"
                 >
-                  <div className="font-semibold">{ch.title}</div>
-                  <div className="text-sm opacity-75 mt-1">Chương {idx + 2}</div>
+                  <div className="font-semibold text-sm truncate">{ch.title}</div>
+                  <div className="text-xs opacity-75 mt-1">Chương {idx + 2}</div>
                 </button>
               ))}
             </div>
             {chapters.length > 11 && (
-              <div className="text-center mt-6 text-white/60 text-sm">
+              <div className="text-center mt-4 text-white/60 text-sm">
                 Và {chapters.length - 11} chương khác...
               </div>
             )}
