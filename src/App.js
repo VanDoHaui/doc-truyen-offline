@@ -1,91 +1,89 @@
-mport React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Moon, Sun, Upload, Menu, X, BookOpen, Download, FileUp, Save, Database, Trash2 } from 'lucide-react';
 import mammoth from 'mammoth';
 
-export default function OfflineReaderApp() {
-  const [darkMode, setDarkMode] = useState(() => {
-    try {
-      const saved = localStorage.getItem('readerAppData');
-      if (saved) {
-        const data = JSON.parse(saved);
-        return data.darkMode !== undefined ? data.darkMode : false;
+// IndexedDB Helper
+const DB_NAME = 'OfflineReaderDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'readerData';
+
+const initDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
       }
-    } catch (error) {
-      console.error('Error loading darkMode:', error);
-    }
-    return false;
+    };
   });
-  const [chapters, setChapters] = useState(() => {
-    try {
-      const saved = localStorage.getItem('readerAppData');
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.chapters && data.chapters.length > 0) {
-          return data.chapters;
-        }
-      }
-    } catch (error) {
-      console.error('Error loading chapters:', error);
-    }
-    return [
-      {
-        id: 1,
-        title: 'Overgeared',
-        content: `
-          <div style="background: #1e2846; padding: 40px 20px 10px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
-            <div style="max-width: 900px; margin: 0 auto;">
-              <div class="overgeared-layout">
-                <img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="Overgeared" class="overgeared-img" />
-                
-                <div class="overgeared-text">
-                  <h1>Overgeared</h1>
-                  <p><strong>Author:</strong> Park Saenal (박새날)</p>
-                  <p><strong>Translator:</strong> rainbowturtle</p>
-                  <p>Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...</p>
-                </div>
+};
+
+const saveToIndexedDB = async (key, data) => {
+  try {
+    const db = await initDB();
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.put(data, key);
+    
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.error('Error saving to IndexedDB:', error);
+    throw error;
+  }
+};
+
+const loadFromIndexedDB = async (key) => {
+  try {
+    const db = await initDB();
+    const transaction = db.transaction([STORE_NAME], 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(key);
+    
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.error('Error loading from IndexedDB:', error);
+    return null;
+  }
+};
+
+export default function OfflineReaderApp() {
+  const [darkMode, setDarkMode] = useState(false);
+  const [chapters, setChapters] = useState([
+    {
+      id: 1,
+      title: 'Overgeared',
+      content: `
+        <div style="background: #1e2846; padding: 40px 20px 10px 20px; min-height: 100vh; margin: -20px -20px -20px -20px; border-radius: 0;">
+          <div style="max-width: 900px; margin: 0 auto;">
+            <div class="overgeared-layout">
+              <img src="https://i.ibb.co/vxvwcN9R/03ld0idgkjv71.png" alt="Overgeared" class="overgeared-img" />
+              
+              <div class="overgeared-text">
+                <h1>Overgeared</h1>
+                <p><strong>Author:</strong> Park Saenal (박새날)</p>
+                <p><strong>Translator:</strong> rainbowturtle</p>
+                <p>Shin Youngwoo has had an unfortunate life and is now stuck carrying bricks on construction sites. He even had to do labor in the VR game, Satisfy!...</p>
               </div>
             </div>
           </div>
-        `
-      }
-    ];
-  });
-  const [currentChapter, setCurrentChapter] = useState(() => {
-    try {
-      const saved = localStorage.getItem('readerAppData');
-      if (saved) {
-        const data = JSON.parse(saved);
-        return data.currentChapter || 0;
-      }
-    } catch (error) {
-      console.error('Error loading currentChapter:', error);
+        </div>
+      `
     }
-    return 0;
-  });
-  const [fontSize, setFontSize] = useState(() => {
-    try {
-      const saved = localStorage.getItem('readerAppData');
-      if (saved) {
-        const data = JSON.parse(saved);
-        return data.fontSize || 18;
-      }
-    } catch (error) {
-      console.error('Error loading fontSize:', error);
-    }
-    return 18;
-  });
-  const [lineHeight, setLineHeight] = useState(() => {
-    try {
-      const saved = localStorage.getItem('readerAppData');
-      if (saved) {
-        const data = JSON.parse(saved);
-        return data.lineHeight || 1.8;
-      }
-    } catch (error) {
-      console.error('Error loading lineHeight:', error);
-    }
-    return 1.8;
-  });
+  ]);
+  const [currentChapter, setCurrentChapter] = useState(0);
+  const [fontSize, setFontSize] = useState(18);
+  const [lineHeight, setLineHeight] = useState(1.8);
   const [toast, setToast] = useState({ show: false, message: '' });
   const [dragOver, setDragOver] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -97,34 +95,54 @@ export default function OfflineReaderApp() {
   const [progress, setProgress] = useState(0);
   const [showHeader, setShowHeader] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
+  const [dbInitialized, setDbInitialized] = useState(false);
   const contentRef = useRef(null);
-  const appDataRef = useRef({ darkMode: false, chapters: [], currentChapter: 0, fontSize: 18, lineHeight: 1.8 });
 
+  // Load dữ liệu từ IndexedDB khi khởi động
   useEffect(() => {
-    setMounted(true);
+    const loadData = async () => {
+      try {
+        const data = await loadFromIndexedDB('readerAppData');
+        if (data) {
+          setDarkMode(data.darkMode !== undefined ? data.darkMode : false);
+          if (data.chapters && data.chapters.length > 0) {
+            setChapters(data.chapters);
+          }
+          setCurrentChapter(data.currentChapter || 0);
+          setFontSize(data.fontSize || 18);
+          setLineHeight(data.lineHeight || 1.8);
+          console.log('✅ Loaded from IndexedDB:', data.chapters?.length, 'chapters');
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setDbInitialized(true);
+        setMounted(true);
+      }
+    };
+    
+    loadData();
   }, []);
 
-  const saveToMemory = () => {
+  // Lưu dữ liệu vào IndexedDB
+  const saveToMemory = async () => {
+    if (!dbInitialized) return;
+    
     try {
       const data = { darkMode, chapters, currentChapter, fontSize, lineHeight };
-      localStorage.setItem('readerAppData', JSON.stringify(data));
-      appDataRef.current = data;
-      console.log('Saved successfully:', data.chapters.length, 'chapters');
+      await saveToIndexedDB('readerAppData', data);
+      console.log('✅ Saved to IndexedDB:', chapters.length, 'chapters');
     } catch (error) {
       console.error('Error saving data:', error);
-      if (error.name === 'QuotaExceededError') {
-        showToast('❌ Dữ liệu quá lớn! Vượt giới hạn lưu trữ');
-      } else {
-        showToast('❌ Lỗi lưu dữ liệu');
-      }
+      showToast('❌ Lỗi lưu dữ liệu');
     }
   };
 
   useEffect(() => {
-    if (mounted) {
+    if (mounted && dbInitialized) {
       saveToMemory();
     }
-  }, [darkMode, chapters, currentChapter, fontSize, lineHeight, mounted]);
+  }, [darkMode, chapters, currentChapter, fontSize, lineHeight, mounted, dbInitialized]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -310,20 +328,19 @@ export default function OfflineReaderApp() {
     setDragOver(false);
     const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.docx') || f.name.endsWith('.doc'));
     if (files.length === 0) return showToast('⚠️ Chỉ nhận file .docx');
-    if (chapters.length + files.length > 3000) return showToast('⚠️ Vượt 3000 chương!');
+    if (chapters.length + files.length > 5000) return showToast('⚠️ Vượt 5000 chương!');
     await processFiles(files);
   };
 
   const handleFileUpload = async (event) => {
     const files = Array.from(event.target.files).filter(f => f.name.endsWith('.docx') || f.name.endsWith('.doc'));
     if (files.length === 0) return showToast('⚠️ Chỉ nhận file .docx');
-    if (chapters.length + files.length > 3000) return showToast('⚠️ Vượt 3000 chương!');
+    if (chapters.length + files.length > 5000) return showToast('⚠️ Vượt 5000 chương!');
     await processFiles(files);
     event.target.value = '';
   };
 
   const deleteChapter = (chapterId) => {
-    // Không cho xóa chương đầu (chương giới thiệu)
     const chapterIndex = chapters.findIndex(ch => ch.id === chapterId);
     if (chapterIndex === 0) {
       return showToast('⚠️ Không thể xóa chương giới thiệu');
@@ -370,28 +387,15 @@ export default function OfflineReaderApp() {
         return;
       }
       
-      // Kiểm tra kích thước dữ liệu
-      const dataSize = JSON.stringify(data).length;
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      
-      if (dataSize > maxSize) {
-        showToast('❌ File quá lớn! Tối đa 5MB');
-        setLoading(false);
-        event.target.value = '';
-        return;
-      }
-      
       setDarkMode(data.darkMode !== undefined ? data.darkMode : false);
       setChapters(data.chapters);
       setCurrentChapter(data.currentChapter || 0);
       setFontSize(data.fontSize || 18);
       setLineHeight(data.lineHeight || 1.8);
       
-      // Lưu ngay sau khi import
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
-          localStorage.setItem('readerAppData', JSON.stringify(data));
-          appDataRef.current = data;
+          await saveToIndexedDB('readerAppData', data);
           showToast(`✅ Nhập ${data.chapters.length} chương!`);
         } catch (err) {
           console.error('Save error:', err);
@@ -407,6 +411,17 @@ export default function OfflineReaderApp() {
     }
     
     event.target.value = '';
+  };
+
+  const getStorageInfo = async () => {
+    try {
+      const data = await loadFromIndexedDB('readerAppData');
+      const size = new Blob([JSON.stringify(data)]).size;
+      const sizeMB = (size / (1024 * 1024)).toFixed(2);
+      showToast(`📦 ${data?.chapters?.length || 0} chương (${sizeMB}MB)`);
+    } catch (error) {
+      showToast('⚠️ Không đọc được dữ liệu');
+    }
   };
 
   return (
@@ -503,7 +518,7 @@ export default function OfflineReaderApp() {
                   className={`w-full px-3 py-2 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} border-0 outline-none`}
                 />
                 <div className="text-xs mt-2 opacity-60">
-                  {chapters.length} / 3000 chương
+                  {chapters.length} / 5000 chương (IndexedDB)
                 </div>
               </div>
 
@@ -614,8 +629,8 @@ export default function OfflineReaderApp() {
                   </div>
                 </label>
                 <button
-                  onClick={() => {
-                    saveToMemory();
+                  onClick={async () => {
+                    await saveToMemory();
                     showToast('✅ Đã lưu!');
                   }}
                   className="py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white text-sm flex items-center justify-center gap-1"
@@ -624,10 +639,7 @@ export default function OfflineReaderApp() {
                   Lưu
                 </button>
                 <button
-                  onClick={() => {
-                    const data = appDataRef.current;
-                    showToast(data.chapters?.length > 0 ? `📦 ${data.chapters.length} chương` : '⚠️ Trống');
-                  }}
+                  onClick={getStorageInfo}
                   className="py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm flex items-center justify-center gap-1"
                 >
                   <Database size={16} />
@@ -639,9 +651,8 @@ export default function OfflineReaderApp() {
                 <button
                   onClick={() => {
                     if (window.confirm('Xóa tất cả?')) {
-                      setChapters([{ id: 1, title: 'Chương mẫu', content: '<p>Đã xóa!</p>' }]);
+                      setChapters([{ id: 1, title: 'Overgeared', content: chapters[0].content }]);
                       setCurrentChapter(0);
-                      appDataRef.current = { darkMode: true, chapters: [], currentChapter: 0, fontSize: 18, lineHeight: 1.8 };
                       showToast('🗑️ Đã xóa');
                     }
                   }}
