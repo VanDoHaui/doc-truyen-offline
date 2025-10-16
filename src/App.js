@@ -109,14 +109,19 @@ export default function OfflineReaderApp() {
       const data = { darkMode, chapters, currentChapter, fontSize, lineHeight };
       localStorage.setItem('readerAppData', JSON.stringify(data));
       appDataRef.current = data;
+      console.log('Saved successfully:', data.chapters.length, 'chapters');
     } catch (error) {
       console.error('Error saving data:', error);
-      showToast('❌ Lỗi lưu dữ liệu');
+      if (error.name === 'QuotaExceededError') {
+        showToast('❌ Dữ liệu quá lớn! Vượt giới hạn lưu trữ');
+      } else {
+        showToast('❌ Lỗi lưu dữ liệu');
+      }
     }
   };
 
   useEffect(() => {
-    if (mounted && chapters.length > 0) {
+    if (mounted) {
       saveToMemory();
     }
   }, [darkMode, chapters, currentChapter, fontSize, lineHeight, mounted]);
@@ -318,6 +323,11 @@ export default function OfflineReaderApp() {
   };
 
   const deleteChapter = (chapterId) => {
+    // Không cho xóa chương đầu (chương giới thiệu)
+    const chapterIndex = chapters.findIndex(ch => ch.id === chapterId);
+    if (chapterIndex === 0) {
+      return showToast('⚠️ Không thể xóa chương giới thiệu');
+    }
     if (chapters.length <= 1) return showToast('⚠️ Không xóa được chương cuối');
     const newChapters = chapters.filter(ch => ch.id !== chapterId);
     setChapters(newChapters);
@@ -347,26 +357,55 @@ export default function OfflineReaderApp() {
   const importData = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        setLoading(true);
-        const data = JSON.parse(e.target.result);
-        if (!data.chapters || !Array.isArray(data.chapters)) return showToast('❌ File không hợp lệ');
-        setDarkMode(data.darkMode !== undefined ? data.darkMode : true);
-        setChapters(data.chapters);
-        setCurrentChapter(data.currentChapter || 0);
-        setFontSize(data.fontSize || 18);
-        setLineHeight(data.lineHeight || 1.8);
-        appDataRef.current = data;
-        showToast(`✅ Nhập ${data.chapters.length} chương!`);
-      } catch (error) {
-        showToast('❌ File lỗi');
-      } finally {
+    
+    try {
+      setLoading(true);
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      if (!data.chapters || !Array.isArray(data.chapters)) {
+        showToast('❌ File không hợp lệ');
         setLoading(false);
+        event.target.value = '';
+        return;
       }
-    };
-    reader.readAsText(file);
+      
+      // Kiểm tra kích thước dữ liệu
+      const dataSize = JSON.stringify(data).length;
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      
+      if (dataSize > maxSize) {
+        showToast('❌ File quá lớn! Tối đa 5MB');
+        setLoading(false);
+        event.target.value = '';
+        return;
+      }
+      
+      setDarkMode(data.darkMode !== undefined ? data.darkMode : false);
+      setChapters(data.chapters);
+      setCurrentChapter(data.currentChapter || 0);
+      setFontSize(data.fontSize || 18);
+      setLineHeight(data.lineHeight || 1.8);
+      
+      // Lưu ngay sau khi import
+      setTimeout(() => {
+        try {
+          localStorage.setItem('readerAppData', JSON.stringify(data));
+          appDataRef.current = data;
+          showToast(`✅ Nhập ${data.chapters.length} chương!`);
+        } catch (err) {
+          console.error('Save error:', err);
+          showToast('⚠️ Nhập OK nhưng không lưu được');
+        }
+        setLoading(false);
+      }, 100);
+      
+    } catch (error) {
+      console.error('Import error:', error);
+      showToast('❌ File lỗi hoặc không đọc được');
+      setLoading(false);
+    }
+    
     event.target.value = '';
   };
 
@@ -396,7 +435,10 @@ export default function OfflineReaderApp() {
           </button>
           
           <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
-            <h1 className="text-base font-bold truncate max-w-xs">
+            <h1 
+              onClick={() => changeChapter(0)}
+              className="text-base font-bold truncate max-w-xs cursor-pointer hover:opacity-80 transition-opacity"
+            >
               Overgeared - Thợ Rèn Huyền Thoại
             </h1>
             {currentChapter !== 0 && (
