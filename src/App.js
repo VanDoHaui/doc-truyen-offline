@@ -215,112 +215,148 @@ export default function OfflineReaderApp() {
 
   const processFiles = async (files) => {
     setLoading(true);
+    setProgress(0);
     let successCount = 0;
     const newChapters = [];
+    const batchSize = 5; // Xử lý 5 file một lúc để tránh crash trên mobile
     
-    for (let i = 0; i < files.length; i++) {
-      try {
-        setProgress(Math.round(((i + 1) / files.length) * 100));
-        const arrayBuffer = await files[i].arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer });
-        let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
+    try {
+      for (let i = 0; i < files.length; i += batchSize) {
+        const batch = files.slice(i, Math.min(i + batchSize, files.length));
         
-        html = html.replace(/←.*?Trước.*?Bình.*?luận.*?Kế.*?→[\s\S]*/gi, '');
-        html = html.replace(/.*?←.*?→.*/g, '');
+        // Xử lý batch song song
+        const batchResults = await Promise.allSettled(
+          batch.map(async (file) => {
+            try {
+              const arrayBuffer = await file.arrayBuffer();
+              const result = await mammoth.convertToHtml({ arrayBuffer });
+              let html = result.value.replace(/<img[^>]*>/g, '').replace(/<p>\s*<\/p>/g, '');
+              
+              html = html.replace(/←.*?Trước.*?Bình.*?luận.*?Kế.*?→[\s\S]*/gi, '');
+              html = html.replace(/.*?←.*?→.*/g, '');
+              
+              html = html.replace(/<a[^>]*>\s*\[\d+\]\s*<\/a>/g, '');
+              html = html.replace(/<a[^>]*>\s*\d+\s*<\/a>/g, '');
+              
+              const indexTruoc = html.indexOf('←');
+              const indexKe = html.indexOf('Kế');
+              if (indexTruoc !== -1 && indexKe !== -1 && indexKe > indexTruoc) {
+                let startIndex = html.lastIndexOf('<p', indexTruoc);
+                if (startIndex !== -1) {
+                  html = html.substring(0, startIndex);
+                }
+              }
+              
+              html = html.replace(/<p>[\s·•∙․⋅]*<\/p>/g, '');
+              html = html.replace(/<p>\s*\.\s*<\/p>/g, '');
+              html = html.replace(/<p>\s*\.\s*\.\s*<\/p>/g, '');
+              html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/g, '');
+              html = html.replace(/<p>\s*\.\s*\.\s*\.\s*\.\s*<\/p>/g, '');
+              html = html.replace(/<hr\s*\/?>/g, '');
+              html = html.replace(/<p>\s*[-─═_]+\s*<\/p>/g, '');
+              html = html.replace(/<p>\s*<\/p>/g, '');
+              
+              html = html.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, content) => {
+                let cleanContent = content
+                  .replace(/<\/?tbody[^>]*>/g, '')
+                  .replace(/<tr[^>]*>/g, '')
+                  .replace(/<\/tr>/g, '')
+                  .replace(/<td[^>]*>/g, '<p>')
+                  .replace(/<\/td>/g, '</p>');
+                return `<div class="info-box">${cleanContent}</div>`;
+              });
+              
+              html = html.replace(/^\[([^\]]+)\]$/gm, '<div class="section-title">[$1]</div>');
+              
+              html = html.replace(/<p>([^<:]+)\s*:\s*([^<]+)<\/p>/g, (match, label, value) => {
+                const specialLabels = ['Tên', 'Cấp độ', 'Lớp nghề', 'Danh hiệu', 'Xếp hạng', 'Độ bền', 'Sức Tấn công', 'Tấn công', 'Tốc độ tấn công', 'Tốc độ', 'Sức mạnh', 'Thể lực', 'Sự nhanh nhẹn', 'Trí tuệ', 'Sự bền bỉ', 'Nội lực', 'May mắn', 'HP', 'MP'];
+                
+                if (label.includes('[') || label.includes(']') || label.trim().length < 2) {
+                  return match;
+                }
+                
+                const isSpecialStat = specialLabels.some(sl => label.trim().includes(sl));
+                
+                if (isSpecialStat) {
+                  return `<div class="stat-line" data-label="${label.trim()}" data-value="${value.trim()}"></div>`;
+                }
+                
+                return match;
+              });
+              
+              html = html.replace(/(<div class="stat-line"[^>]*><\/div>\s*)+/g, (match) => {
+                const statMatches = match.matchAll(/<div class="stat-line" data-label="([^"]*)" data-value="([^"]*)"><\/div>/g);
+                const stats = Array.from(statMatches).map(m => ({ label: m[1], value: m[2] }));
+                
+                if (stats.length === 0) return match;
+                
+                const midPoint = Math.ceil(stats.length / 2);
+                const col1 = stats.slice(0, midPoint);
+                const col2 = stats.slice(midPoint);
+                
+                let gridHTML = '<div class="stats-grid-container"><div class="stats-column">';
+                col1.forEach(stat => {
+                  gridHTML += `<div class="detail-stat"><span class="detail-label">${stat.label}</span><span class="detail-sep">:</span><span class="detail-value">${stat.value}</span></div>`;
+                });
+                gridHTML += '</div><div class="stats-column">';
+                col2.forEach(stat => {
+                  gridHTML += `<div class="detail-stat"><span class="detail-label">${stat.label}</span><span class="detail-sep">:</span><span class="detail-value">${stat.value}</span></div>`;
+                });
+                gridHTML += '</div></div>';
+                
+                return gridHTML;
+              });
+              
+              html = html.replace(/\[([^\]]+)\]/g, '<span class="item-name">[$1]</span>');
+              html = html.replace(/Xếp hạng\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Xếp hạng:</span><span class="stat-value">$1</span></div>');
+              html = html.replace(/Độ bền\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Độ bền:</span><span class="stat-value">$1</span></div>');
+              html = html.replace(/Sức Tấn công\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Tấn công:</span><span class="stat-value">$1</span></div>');
+              html = html.replace(/Tốc độ tấn công\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Tốc độ:</span><span class="stat-value">$1</span></div>');
+              
+              return {
+                id: Date.now() + Math.random(),
+                title: file.name.replace(/\.(docx|doc)$/, ''),
+                content: html
+              };
+            } catch (error) {
+              console.error('Lỗi xử lý file:', file.name, error);
+              throw error;
+            }
+          })
+        );
         
-        html = html.replace(/<a[^>]*>\s*\[\d+\]\s*<\/a>/g, '');
-        html = html.replace(/<a[^>]*>\s*\d+\s*<\/a>/g, '');
-        
-        const indexTruoc = html.indexOf('←');
-        const indexKe = html.indexOf('Kế');
-        if (indexTruoc !== -1 && indexKe !== -1 && indexKe > indexTruoc) {
-          let startIndex = html.lastIndexOf('<p', indexTruoc);
-          if (startIndex !== -1) {
-            html = html.substring(0, startIndex);
+        // Thêm các file thành công vào newChapters
+        batchResults.forEach(result => {
+          if (result.status === 'fulfilled') {
+            newChapters.push(result.value);
+            successCount++;
           }
+        });
+        
+        // Cập nhật progress
+        setProgress(Math.round(((i + batch.length) / files.length) * 100));
+        
+        // Delay nhỏ giữa các batch để tránh quá tải
+        if (i + batchSize < files.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
-        
-        html = html.replace(/<p>[\s·•∙․⋅]*<\/p>/g, '');
-        html = html.replace(/<p>\s*\.\s*<\/p>/g, '');
-        html = html.replace(/<p>\s*\.\s*\.\s*<\/p>/g, '');
-        html = html.replace(/<p>\s*\.\s*\.\s*\.\s*<\/p>/g, '');
-        html = html.replace(/<p>\s*\.\s*\.\s*\.\s*\.\s*<\/p>/g, '');
-        html = html.replace(/<hr\s*\/?>/g, '');
-        html = html.replace(/<p>\s*[-─═_]+\s*<\/p>/g, '');
-        html = html.replace(/<p>\s*<\/p>/g, '');
-        
-        html = html.replace(/<table[^>]*>(.*?)<\/table>/gs, (match, content) => {
-          let cleanContent = content
-            .replace(/<\/?tbody[^>]*>/g, '')
-            .replace(/<tr[^>]*>/g, '')
-            .replace(/<\/tr>/g, '')
-            .replace(/<td[^>]*>/g, '<p>')
-            .replace(/<\/td>/g, '</p>');
-          return `<div class="info-box">${cleanContent}</div>`;
-        });
-        
-        html = html.replace(/^\[([^\]]+)\]$/gm, '<div class="section-title">[$1]</div>');
-        
-        html = html.replace(/<p>([^<:]+)\s*:\s*([^<]+)<\/p>/g, (match, label, value) => {
-          const specialLabels = ['Tên', 'Cấp độ', 'Lớp nghề', 'Danh hiệu', 'Xếp hạng', 'Độ bền', 'Sức Tấn công', 'Tấn công', 'Tốc độ tấn công', 'Tốc độ', 'Sức mạnh', 'Thể lực', 'Sự nhanh nhẹn', 'Trí tuệ', 'Sự bền bỉ', 'Nội lực', 'May mắn', 'HP', 'MP'];
-          
-          if (label.includes('[') || label.includes(']') || label.trim().length < 2) {
-            return match;
-          }
-          
-          const isSpecialStat = specialLabels.some(sl => label.trim().includes(sl));
-          
-          if (isSpecialStat) {
-            return `<div class="stat-line" data-label="${label.trim()}" data-value="${value.trim()}"></div>`;
-          }
-          
-          return match;
-        });
-        
-        html = html.replace(/(<div class="stat-line"[^>]*><\/div>\s*)+/g, (match) => {
-          const statMatches = match.matchAll(/<div class="stat-line" data-label="([^"]*)" data-value="([^"]*)"><\/div>/g);
-          const stats = Array.from(statMatches).map(m => ({ label: m[1], value: m[2] }));
-          
-          if (stats.length === 0) return match;
-          
-          const midPoint = Math.ceil(stats.length / 2);
-          const col1 = stats.slice(0, midPoint);
-          const col2 = stats.slice(midPoint);
-          
-          let gridHTML = '<div class="stats-grid-container"><div class="stats-column">';
-          col1.forEach(stat => {
-            gridHTML += `<div class="detail-stat"><span class="detail-label">${stat.label}</span><span class="detail-sep">:</span><span class="detail-value">${stat.value}</span></div>`;
-          });
-          gridHTML += '</div><div class="stats-column">';
-          col2.forEach(stat => {
-            gridHTML += `<div class="detail-stat"><span class="detail-label">${stat.label}</span><span class="detail-sep">:</span><span class="detail-value">${stat.value}</span></div>`;
-          });
-          gridHTML += '</div></div>';
-          
-          return gridHTML;
-        });
-        
-        html = html.replace(/\[([^\]]+)\]/g, '<span class="item-name">[$1]</span>');
-        html = html.replace(/Xếp hạng\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Xếp hạng:</span><span class="stat-value">$1</span></div>');
-        html = html.replace(/Độ bền\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Độ bền:</span><span class="stat-value">$1</span></div>');
-        html = html.replace(/Sức Tấn công\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Tấn công:</span><span class="stat-value">$1</span></div>');
-        html = html.replace(/Tốc độ tấn công\s*:\s*([^\n<]+)/gi, '<div class="stat-row"><span class="stat-label">Tốc độ:</span><span class="stat-value">$1</span></div>');
-        
-        newChapters.push({
-          id: Date.now() + Math.random(),
-          title: files[i].name.replace(/\.(docx|doc)$/, ''),
-          content: html
-        });
-        successCount++;
-      } catch (error) {
-        console.error('Lỗi:', error);
       }
+      
+      // Cập nhật chapters một lần duy nhất
+      if (newChapters.length > 0) {
+        setChapters(prev => [...prev, ...newChapters]);
+      }
+      
+      setLoading(false);
+      setProgress(0);
+      showToast(`✅ Thêm ${successCount}/${files.length} chương`);
+      
+    } catch (error) {
+      console.error('Lỗi tổng thể:', error);
+      setLoading(false);
+      setProgress(0);
+      showToast(`⚠️ Thêm ${successCount}/${files.length} chương`);
     }
-    
-    setChapters(prev => [...prev, ...newChapters]);
-    setLoading(false);
-    setProgress(0);
-    showToast(`✅ Thêm ${successCount} chương`);
   };
 
   const handleDrop = async (e) => {
