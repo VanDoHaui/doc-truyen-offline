@@ -97,6 +97,8 @@ export default function OfflineReaderApp() {
   const [lastScrollY, setLastScrollY] = useState(0);
   const [dbInitialized, setDbInitialized] = useState(false);
   const contentRef = useRef(null);
+  const lastTapRef = useRef(0);
+  const tapTimeoutRef = useRef(null);
 
   // Load dữ liệu từ IndexedDB khi khởi động
   useEffect(() => {
@@ -150,6 +152,27 @@ export default function OfflineReaderApp() {
     setLastScrollY(0);
   }, [currentChapter, chapters.length]);
 
+  // Double tap để toggle header
+  const handleDoubleTap = (e) => {
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapRef.current;
+    
+    if (timeSinceLastTap < 300 && timeSinceLastTap > 0) {
+      // Double tap detected
+      e.preventDefault();
+      setShowHeader(prev => !prev);
+      
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+        tapTimeoutRef.current = null;
+      }
+    } else {
+      // Single tap - chờ xem có tap lần 2 không
+      lastTapRef.current = now;
+    }
+  };
+
+  // Ẩn header khi scroll xuống, hiện khi scroll lên
   useEffect(() => {
     let ticking = false;
     
@@ -461,7 +484,11 @@ export default function OfflineReaderApp() {
   };
 
   return (
-  <div className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-white text-gray-900'}`} style={{ touchAction: 'pan-y', backgroundColor: currentChapter === 0 ? '#1e2846' : (darkMode ? '#1e2846' : '#ffffff') }}>
+  <div 
+    className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-white text-gray-900'}`} 
+    style={{ touchAction: 'pan-y', backgroundColor: currentChapter === 0 ? '#1e2846' : (darkMode ? '#1e2846' : '#ffffff') }}
+    onClick={handleDoubleTap}
+  >
       {loading && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl p-6 max-w-xs w-full mx-4 text-center`}>
