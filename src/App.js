@@ -97,8 +97,6 @@ export default function OfflineReaderApp() {
   const [lastScrollY, setLastScrollY] = useState(0);
   const [dbInitialized, setDbInitialized] = useState(false);
   const contentRef = useRef(null);
-  const lastTapRef = useRef(0);
-  const tapTimeoutRef = useRef(null);
 
   // Load dữ liệu từ IndexedDB khi khởi động
   useEffect(() => {
@@ -151,26 +149,6 @@ export default function OfflineReaderApp() {
     setShowHeader(true);
     setLastScrollY(0);
   }, [currentChapter, chapters.length]);
-
-  // Double tap để toggle header
-  const handleDoubleTap = (e) => {
-    const now = Date.now();
-    const timeSinceLastTap = now - lastTapRef.current;
-    
-    if (timeSinceLastTap < 300 && timeSinceLastTap > 0) {
-      // Double tap detected
-      e.preventDefault();
-      setShowHeader(prev => !prev);
-      
-      if (tapTimeoutRef.current) {
-        clearTimeout(tapTimeoutRef.current);
-        tapTimeoutRef.current = null;
-      }
-    } else {
-      // Single tap - chờ xem có tap lần 2 không
-      lastTapRef.current = now;
-    }
-  };
 
   // Ẩn header khi scroll xuống, hiện khi scroll lên
   useEffect(() => {
@@ -487,7 +465,6 @@ export default function OfflineReaderApp() {
   <div 
     className={`min-h-screen ${darkMode ? 'text-gray-100' : 'bg-white text-gray-900'}`} 
     style={{ touchAction: 'pan-y', backgroundColor: currentChapter === 0 ? '#1e2846' : (darkMode ? '#1e2846' : '#ffffff') }}
-    onClick={handleDoubleTap}
   >
       {loading && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
@@ -503,7 +480,9 @@ export default function OfflineReaderApp() {
         </div>
       )}
 
-      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 right-0 z-20 shadow-sm`}>
+      <div 
+        className={`${darkMode ? 'bg-gray-800' : 'bg-white'} fixed top-0 left-0 right-0 z-20 shadow-sm transition-transform duration-300 ${showHeader ? 'translate-y-0' : '-translate-y-full'}`}
+      >
         <div className="flex items-center justify-between py-2 px-2">
           <button
             onClick={() => setShowMenu(!showMenu)}
@@ -512,31 +491,49 @@ export default function OfflineReaderApp() {
             {showMenu ? <X size={22} /> : <Menu size={22} />}
           </button>
           
-          <div className="absolute left-1/2 transform -translate-x-1/2 text-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 px-2">
             <h1 
               onClick={() => changeChapter(0)}
-              className="text-base font-bold truncate max-w-xs cursor-pointer hover:opacity-80 transition-opacity"
+              className="text-base font-bold cursor-pointer hover:opacity-80 transition-opacity"
+              style={{ color: darkMode ? '#10b981' : '#059669' }}
             >
               Overgeared - Thợ Rèn Huyền Thoại
             </h1>
+            
             {currentChapter !== 0 && (
-              <div className="flex items-center gap-3 justify-center mt-1">
+              <div className="flex items-center gap-4 w-full max-w-xl justify-center">
                 <button
                   onClick={() => changeChapter(currentChapter - 1)}
                   disabled={currentChapter === 0}
-                  className="px-2 py-1 hover:bg-gray-700 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                  className={`py-2 px-3 rounded-lg font-medium text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                    darkMode 
+                      ? 'bg-green-600 hover:bg-green-700 text-white' 
+                      : 'bg-green-500 hover:bg-green-600 text-white'
+                  }`}
                 >
-                  <span className="text-base font-bold">&lt;</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                  Chương trước
                 </button>
-                <p className="text-sm opacity-80 font-medium">
+
+                <p className="text-base opacity-80 font-semibold min-w-[90px] text-center">
                   Chương {currentChapter}
                 </p>
+
                 <button
                   onClick={() => changeChapter(currentChapter + 1)}
                   disabled={currentChapter >= chapters.length - 1}
-                  className="px-2 py-1 hover:bg-gray-700 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                  className={`py-2 px-3 rounded-lg font-medium text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                    darkMode 
+                      ? 'bg-green-600 hover:bg-green-700 text-white' 
+                      : 'bg-green-500 hover:bg-green-600 text-white'
+                  }`}
                 >
-                  <span className="text-base font-bold">&gt;</span>
+                  Chương tiếp
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
                 </button>
               </div>
             )}
